@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "edk2",
+            "includePath": [
+                "${workspaceFolder}/src/inc",
+                "${workspaceFolder}/edk2/MdePkg/Include",
+                "${workspaceFolder}/edk2/MdePkg/Include/X64",
+                "${workspaceFolder}/edk2/CsosBootPkg/Include",
+                "${workspaceFolder}/edk2/BaseTools/Source/C/GenFw"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/src/inc",
+                    "${workspaceFolder}/edk2/MdePkg/Include",
+                    "${workspaceFolder}/edk2/CsosBootPkg/Application/EfiBoot"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            },
+            "cppStandard": "c++17",
+            "cStandard": "c17",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}
