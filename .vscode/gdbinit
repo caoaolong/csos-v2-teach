@@ -1,0 +1,7 @@
+set osabi none
+set architecture i386:x86-64
+set substitute-path /cygdrive/d/project/csos-v2-teach D:/project/csos-v2-teach
+directory /cygdrive/d/project/csos-v2-teach
+
+file /cygdrive/d/project/csos-v2-teach/build/kernel.elf
+target remote 127.0.0.1:1234
