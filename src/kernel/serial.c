@@ -35,3 +35,17 @@ void put_string(const char *s)
         serial_putchar(*s);
     }
 }
+
+int fput_string(const char *fmt, ...)
+{
+    static char buf[1024];
+    va_list args;
+    int i;
+
+    va_start(args, fmt);
+    i = vsprintf(buf, fmt, args);
+    va_end(args);
+
+    put_string(buf);
+    return i;
+}
