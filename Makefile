@@ -12,9 +12,9 @@ EDK2_SRC   = ../edk2
 # 本项目内同步下来的 edk2 内容
 EDK2_DIR   = edk2
 
-KERNEL     = $(BUILD_DIR)/kernel.bin
+KERNEL     = $(BUILD_DIR)/kernel.elf
 
-CFLAGS = -ffreestanding -mno-red-zone -I$(INC_DIR)
+CFLAGS = -ffreestanding -mno-red-zone -g -O0 -I$(INC_DIR) -MMD -MP
 
 KERNEL_SRCS_C = $(wildcard $(KERNEL_DIR)/*.c)
 KERNEL_SRCS_S = $(wildcard $(KERNEL_DIR)/*.S)
@@ -48,6 +48,7 @@ master: $(KERNEL)
 # 启动qemu模拟环境
 qemu: master
 	qemu-system-x86_64 \
+		-s -S -m 128M \
 		-bios OVMF.fd \
 		-drive format=raw,file=fat:rw:qemu/hda-contents \
 		-net none \
