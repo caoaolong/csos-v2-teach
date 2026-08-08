@@ -31,6 +31,25 @@
         }
       ],
       "launchCompleteCommand": "exec-continue"
+    },
+    {
+      "name": "Example: Long Mode",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/long-mode/build/kernel.elf",
+      "cwd": "${workspaceFolder}/examples/long-mode",
+      "MIMode": "gdb",
+      "miDebuggerPath": "D:/cygwin64/bin/gdb.exe",
+      "targetArchitecture": "x86",
+      "sourceFileMap": {
+        "/cygdrive/d/project/csos-v2-teach": "D:/project/csos-v2-teach"
+      },
+      "customLaunchSetupCommands": [
+        {
+          "text": "source /cygdrive/d/project/csos-v2/.vscode/gdbinit"
+        }
+      ],
+      "launchCompleteCommand": "exec-continue"
     }
   ]
 }
