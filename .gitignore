@@ -1,3 +1,4 @@
 /edk2
 /debug.log
 /build
+/examples/**/build
