@@ -3,9 +3,12 @@
 #include <kernel.h>
 #include <serial.h>
 #include <assert.h>
+#include <gdt.h>
 
 void kernel_main(void)
 {
+    init_gdt();
+
     serial_init();
     put_string("UEFI -> Bootloader -> Kernel OK\n");
 

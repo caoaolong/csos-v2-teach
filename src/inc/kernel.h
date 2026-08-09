@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#define KERNEL_CODE_SEG (1 * 8)
+#define KERNEL_DATA_SEG (2 * 8)
+
 static inline uint8_t inb(uint16_t port)
 {
     uint8_t rv;
