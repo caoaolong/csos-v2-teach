@@ -4,20 +4,19 @@
 #include <serial.h>
 #include <assert.h>
 #include <gdt.h>
+#include <idt.h>
 
-void kernel_main(void)
+void kernel_main()
 {
     init_gdt();
+    init_idt();
 
     serial_init();
-    put_string("UEFI -> Bootloader -> Kernel OK\n");
 
-    // fput_string test
-    fput_string("fput_string test: %s, n=%d, hex=0x%x\n", "hello", 42, 0xDEAD);
-    fput_string("fput_string test: signed=%d, unsigned=%u, oct=%o\n", -7, 7u, 8);
-
-    assert(1 + 1 == 2);
-    assert(0);
+    put_string("before int3\n");
+    __asm__ volatile("int3");
+    /* 若门有效，这行不会出现 */
+    put_string("after int3\n");
 
     for (;;)
     {
