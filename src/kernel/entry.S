@@ -13,6 +13,7 @@ _start:
     rep stosb
 
     /* 调用 C 入口 */
+    mov $0x40000, %rdi
     call kernel_main
 
 1:
