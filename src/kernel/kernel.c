@@ -5,8 +5,9 @@
 #include <assert.h>
 #include <gdt.h>
 #include <idt.h>
+#include <memory/pmm.h>
 
-void kernel_main()
+void kernel_main(boot_info_t *boot_info)
 {
     init_gdt();
     init_idt();

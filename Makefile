@@ -16,8 +16,10 @@ KERNEL     = $(BUILD_DIR)/kernel.elf
 
 CFLAGS = -ffreestanding -mno-red-zone -g -O0 -I$(INC_DIR) -MMD -MP
 
-KERNEL_SRCS_C = $(wildcard $(KERNEL_DIR)/*.c)
-KERNEL_SRCS_S = $(wildcard $(KERNEL_DIR)/*.S)
+KERNEL_SRCS_C = $(wildcard $(KERNEL_DIR)/*.c) \
+                $(wildcard $(KERNEL_DIR)/*/*.c)
+KERNEL_SRCS_S = $(wildcard $(KERNEL_DIR)/*.S) \
+                $(wildcard $(KERNEL_DIR)/*/*.S)
 KERNEL_OBJS   = $(patsubst $(SRC_DIR)/%.S,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_S)) \
                 $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_C))
 

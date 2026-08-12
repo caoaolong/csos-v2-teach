@@ -1,12 +1,31 @@
 #include <Uefi.h>
 #include <Library/UefiLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include "ElfLoader.h"
 
-typedef VOID (*KERNEL_ENTRY)(VOID);
+#define CSOS_BOOT_INFO_ADDR 0x40000ULL
+#define CSOS_BOOT_INFO_MAGIC 0xC505B007ULL
+
+typedef struct
+{
+    UINT64 magic;
+    // UEFI Memory Map
+    UINT64 memory_map;      // physical address of EFI_MEMORY_DESCRIPTOR*
+    UINT64 memory_map_size; // size in bytes
+    UINT64 descriptor_size; // size of each descriptor
+    UINT32 descriptor_version;
+
+    // reserved for future extension
+    UINT64 rsdp;
+} BootInfo;
+
+BootInfo *BootInfoPtr;
+
+typedef VOID (*KERNEL_ENTRY)(BootInfo *);
 
 EFI_STATUS
 EFIAPI
@@ -71,6 +90,22 @@ UefiMain(
     Print(L"EfiBoot: kernel loaded at 0x%lx, entry 0x%lx\n", KernelBase, EntryPoint);
 
     (VOID) KernelBase;
+    EFI_PHYSICAL_ADDRESS BootInfoPhys = CSOS_BOOT_INFO_ADDR;
+    Status = gBS->AllocatePages(
+        AllocateAddress,
+        EfiLoaderData,
+        1,
+        &BootInfoPhys);
+    if (EFI_ERROR(Status))
+    {
+        Print(L"EfiBoot: AllocatePages(boot_info @ 0x%lx) failed: %r\n",
+              CSOS_BOOT_INFO_ADDR, Status);
+        return Status;
+    }
+
+    BootInfoPtr = (BootInfo *)(UINTN)BootInfoPhys;
+    ZeroMem(BootInfoPtr, sizeof(BootInfo));
+    BootInfoPtr->magic = CSOS_BOOT_INFO_MAGIC;
 
     //
     // ExitBootServices & jump to kernel (retry if map key changes)
@@ -114,6 +149,11 @@ UefiMain(
             return Status;
         }
 
+        BootInfoPtr->memory_map = (UINT64)(UINTN)MemMap;
+        BootInfoPtr->memory_map_size = (UINT64)MemMapSize;
+        BootInfoPtr->descriptor_size = (UINT64)DescriptorSize;
+        BootInfoPtr->descriptor_version = DescriptorVersion;
+
         Status = gBS->ExitBootServices(ImageHandle, MapKey);
         if (!EFI_ERROR(Status))
         {
@@ -130,7 +170,7 @@ UefiMain(
     }
 
     // 跳转进入内核
-    ((KERNEL_ENTRY)(UINTN)EntryPoint)();
+    ((KERNEL_ENTRY)(UINTN)EntryPoint)(BootInfoPtr);
 
     return EFI_SUCCESS;
 }
