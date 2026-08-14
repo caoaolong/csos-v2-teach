@@ -9,15 +9,11 @@
 
 void kernel_main(boot_info_t *boot_info)
 {
+    serial_init();
     init_gdt();
     init_idt();
 
-    serial_init();
-
-    put_string("before int3\n");
-    __asm__ volatile("int3");
-    /* 若门有效，这行不会出现 */
-    put_string("after int3\n");
+    init_pmm(boot_info);
 
     for (;;)
     {
