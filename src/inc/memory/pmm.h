@@ -56,6 +56,11 @@ typedef struct boot_info
 {
     uint64_t magic;
 
+    uint64_t framebuffer_base;
+    uint32_t framebuffer_width;
+    uint32_t framebuffer_height;
+    uint32_t framebuffer_pixels_per_scanline;
+
     uint64_t memory_map;
     uint64_t memory_map_size;
     uint64_t descriptor_size;
