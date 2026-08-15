@@ -32,3 +32,4 @@
 
 [Components]
   CsosBootPkg/Application/EfiBoot/EfiBoot.inf
+  CsosBootPkg/Application/GopMode/GopMode.inf

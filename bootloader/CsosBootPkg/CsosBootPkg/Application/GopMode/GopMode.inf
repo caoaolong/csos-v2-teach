@@ -1,15 +1,13 @@
 [Defines]
   INF_VERSION    = 0x00010006
-  BASE_NAME      = EfiBoot
-  FILE_GUID      = 7AB3B9B2-1234-4ABC-9C12-123456789ABC
+  BASE_NAME      = GopMode
+  FILE_GUID      = 3C8E6A1F-9B2D-4E5A-8F01-ABCDEF012345
   MODULE_TYPE    = UEFI_APPLICATION
   VERSION_STRING = 1.0
   ENTRY_POINT    = UefiMain
 
 [Sources]
-  Main.c
-  ElfLoader.c
-  ElfLoader.h
+  GopMode.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -21,16 +19,6 @@
   UefiLib
   UefiBootServicesTableLib
   MemoryAllocationLib
-  BaseMemoryLib
-  DebugLib
 
 [Protocols]
-  gEfiLoadedImageProtocolGuid
-  gEfiSimpleFileSystemProtocolGuid
   gEfiGraphicsOutputProtocolGuid
-  gEfiEdidActiveProtocolGuid
-  gEfiEdidDiscoveredProtocolGuid
-
-[Guids]
-  gEfiAcpiTableGuid
-  gEfiAcpi10TableGuid
