@@ -60,6 +60,7 @@ typedef struct boot_info
     uint32_t framebuffer_width;
     uint32_t framebuffer_height;
     uint32_t framebuffer_pixels_per_scanline;
+    uint32_t framebuffer_pixel_format; /* EFI_GRAPHICS_PIXEL_FORMAT */
 
     uint64_t memory_map;
     uint64_t memory_map_size;
