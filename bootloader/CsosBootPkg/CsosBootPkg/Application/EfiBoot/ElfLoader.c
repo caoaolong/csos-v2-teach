@@ -45,7 +45,6 @@ LoadElf64(
     }
 
     *EntryPoint = (EFI_PHYSICAL_ADDRESS)Ehdr.e_entry;
-    Print(L"LoadElf64: entry=0x%lx phnum=%d\n", *EntryPoint, Ehdr.e_phnum);
 
     //
     // Read program headers
@@ -105,9 +104,6 @@ LoadElf64(
         {
             *KernelBase = Addr;
         }
-
-        Print(L"LoadElf64: PT_LOAD paddr=0x%lx filesz=0x%lx memsz=0x%lx\n",
-              Addr, Ph->p_filesz, Ph->p_memsz);
 
         //
         // Zero BSS
