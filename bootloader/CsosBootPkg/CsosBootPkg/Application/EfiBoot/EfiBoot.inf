@@ -8,8 +8,13 @@
 
 [Sources]
   Main.c
+  BootGraphics.c
+  BootGraphics.h
   ElfLoader.c
   ElfLoader.h
+  SetupUtility.c
+  SetupUtility.h
+  SetupNvData.h
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -20,8 +25,11 @@
   UefiApplicationEntryPoint
   UefiLib
   UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
   MemoryAllocationLib
   BaseMemoryLib
+  BaseLib
+  PrintLib
   DebugLib
 
 [Protocols]
@@ -30,7 +38,8 @@
   gEfiGraphicsOutputProtocolGuid
   gEfiEdidActiveProtocolGuid
   gEfiEdidDiscoveredProtocolGuid
+  gEfiHiiFontProtocolGuid
+  gEfiSimpleTextInProtocolGuid
 
 [Guids]
-  gEfiAcpiTableGuid
-  gEfiAcpi10TableGuid
+  gCsosBootSetupFormsetGuid

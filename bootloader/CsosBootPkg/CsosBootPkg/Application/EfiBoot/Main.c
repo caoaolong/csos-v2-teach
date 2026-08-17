@@ -1,14 +1,14 @@
 #include <Uefi.h>
 #include <Library/UefiLib.h>
-#include <Library/BaseMemoryLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/GraphicsOutput.h>
-#include <Protocol/EdidActive.h>
-#include <Protocol/EdidDiscovered.h>
+#include "BootGraphics.h"
 #include "ElfLoader.h"
+#include "SetupUtility.h"
 
 #define CSOS_BOOT_INFO_ADDR 0x40000ULL
 #define CSOS_BOOT_INFO_MAGIC 0xC505B007ULL
@@ -19,7 +19,6 @@
 typedef struct
 {
     UINT64 magic;
-
     UINT64 framebuffer_base;
     UINT32 framebuffer_width;
     UINT32 framebuffer_height;
@@ -32,88 +31,10 @@ typedef struct
     UINT64 descriptor_size; // size of each descriptor
     UINT32 descriptor_version;
 
-    // reserved for future extension
     UINT64 rsdp;
 } BootInfo;
 
-BootInfo *BootInfoPtr;
-
 typedef VOID (*KERNEL_ENTRY)(BootInfo *);
-
-/**
-  Read preferred timing from EDID (first Detailed Timing Descriptor).
-  Returns TRUE if a usable target resolution was found.
-**/
-static BOOLEAN
-GetEdidPreferredResolution(
-    OUT UINT32 *Width,
-    OUT UINT32 *Height)
-{
-    EFI_STATUS Status;
-    EFI_EDID_ACTIVE_PROTOCOL *EdidActive;
-    EFI_EDID_DISCOVERED_PROTOCOL *EdidDiscovered;
-    UINT8 *Edid;
-    UINT32 Size;
-    UINT32 X;
-    UINT32 Y;
-
-    Edid = NULL;
-    Size = 0;
-
-    Status = gBS->LocateProtocol(
-        &gEfiEdidActiveProtocolGuid,
-        NULL,
-        (VOID **)&EdidActive);
-    if (!EFI_ERROR(Status) &&
-        (EdidActive->Edid != NULL) &&
-        (EdidActive->SizeOfEdid >= 128))
-    {
-        Edid = EdidActive->Edid;
-        Size = EdidActive->SizeOfEdid;
-    }
-    else
-    {
-        Status = gBS->LocateProtocol(
-            &gEfiEdidDiscoveredProtocolGuid,
-            NULL,
-            (VOID **)&EdidDiscovered);
-        if (!EFI_ERROR(Status) &&
-            (EdidDiscovered->Edid != NULL) &&
-            (EdidDiscovered->SizeOfEdid >= 128))
-        {
-            Edid = EdidDiscovered->Edid;
-            Size = EdidDiscovered->SizeOfEdid;
-        }
-    }
-
-    if ((Edid == NULL) || (Size < 128))
-    {
-        return FALSE;
-    }
-
-    /* EDID header magic: 00 FF ... */
-    if ((Edid[0] != 0x00) || (Edid[1] != 0xFF))
-    {
-        return FALSE;
-    }
-
-    /* First DTD starts at offset 54; 00 00 means not a timing block */
-    if ((Edid[54] == 0x00) && (Edid[55] == 0x00))
-    {
-        return FALSE;
-    }
-
-    X = (UINT32)Edid[56] | (((UINT32)(Edid[58] & 0xF0)) << 4);
-    Y = (UINT32)Edid[59] | (((UINT32)(Edid[61] & 0xF0)) << 4);
-    if ((X < 640) || (Y < 480))
-    {
-        return FALSE;
-    }
-
-    *Width = X;
-    *Height = Y;
-    return TRUE;
-}
 
 static EFI_STATUS
 InitGraphics(
@@ -121,19 +42,6 @@ InitGraphics(
 {
     EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
     EFI_STATUS Status;
-    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *ModeInfo;
-    UINTN SizeOfInfo;
-    UINT32 Mode;
-    UINT32 m;
-    UINT32 *Fb;
-    UINTN PixelCount;
-    UINTN i;
-    UINT32 BestMode;
-    UINT32 BestScore;
-    UINT32 Score;
-    UINT32 TargetW;
-    UINT32 TargetH;
-    BOOLEAN HasTarget;
 
     Status = gBS->LocateProtocol(
         &gEfiGraphicsOutputProtocolGuid,
@@ -145,59 +53,10 @@ InitGraphics(
         return Status;
     }
 
-    /*
-      Prefer GOP mode closest to display preferred timing (EDID).
-      If EDID is unavailable, keep the current mode.
-    */
-    BestMode = Gop->Mode->Mode;
-    HasTarget = GetEdidPreferredResolution(&TargetW, &TargetH);
-    if (HasTarget)
+    if ((Gop->Mode == NULL) || (Gop->Mode->Info == NULL))
     {
-        Print(L"EfiBoot: EDID preferred %ux%u\n", TargetW, TargetH);
-
-        BestScore = 0xFFFFFFFFu;
-        for (m = 0; m < Gop->Mode->MaxMode; m++)
-        {
-            Status = Gop->QueryMode(Gop, m, &SizeOfInfo, &ModeInfo);
-            if (EFI_ERROR(Status) || (ModeInfo == NULL))
-            {
-                continue;
-            }
-
-            /* Need a linear framebuffer for later FB fill */
-            if (ModeInfo->PixelFormat == PixelBltOnly)
-            {
-                FreePool(ModeInfo);
-                continue;
-            }
-
-            Score = (ModeInfo->HorizontalResolution > TargetW
-                         ? ModeInfo->HorizontalResolution - TargetW
-                         : TargetW - ModeInfo->HorizontalResolution) +
-                    (ModeInfo->VerticalResolution > TargetH
-                         ? ModeInfo->VerticalResolution - TargetH
-                         : TargetH - ModeInfo->VerticalResolution);
-
-            if (Score < BestScore)
-            {
-                BestScore = Score;
-                BestMode = m;
-            }
-
-            FreePool(ModeInfo);
-        }
-    }
-    else
-    {
-        Print(L"EfiBoot: no EDID preferred timing, keep mode %u\n", BestMode);
-    }
-
-    Mode = BestMode;
-    Status = Gop->SetMode(Gop, Mode);
-    if (EFI_ERROR(Status))
-    {
-        Print(L"EfiBoot: SetMode(%u) failed: %r\n", Mode, Status);
-        return Status;
+        Print(L"EfiBoot: GOP mode info unavailable\n");
+        return EFI_UNSUPPORTED;
     }
 
     Info->framebuffer_base = Gop->Mode->FrameBufferBase;
@@ -206,22 +65,16 @@ InitGraphics(
     Info->framebuffer_pixels_per_scanline = Gop->Mode->Info->PixelsPerScanLine;
     Info->framebuffer_pixel_format = (UINT32)Gop->Mode->Info->PixelFormat;
 
-    /* Fill as 32bpp; bit-mask modes are treated as 4 bytes/pixel */
     if (Gop->Mode->Info->PixelFormat == PixelBltOnly)
     {
-        Print(L"EfiBoot: PixelBltOnly, skip FB fill\n");
         return EFI_UNSUPPORTED;
     }
 
-    Fb = (UINT32 *)(UINTN)Gop->Mode->FrameBufferBase;
-    PixelCount = (UINTN)Info->framebuffer_pixels_per_scanline *
-                 (UINTN)Info->framebuffer_height;
-    for (i = 0; i < PixelCount; i++)
-    {
-        Fb[i] = CSOS_BG_COLOR;
-    }
+    //
+    // Setup Utility already drew the UI; only record BootInfo here.
+    // Writing stride*height pixels can exceed FrameBufferSize and corrupt UEFI memory.
+    //
 
-    /* Last step: clear only, no Print (ConOut would draw on the FB) */
     return EFI_SUCCESS;
 }
 
@@ -237,20 +90,85 @@ UefiMain(
     EFI_STATUS Status;
     EFI_PHYSICAL_ADDRESS EntryPoint;
     EFI_PHYSICAL_ADDRESS KernelBase;
+    EFI_PHYSICAL_ADDRESS BootInfoPhys;
     UINTN MapKey;
     EFI_MEMORY_DESCRIPTOR *MemMap;
     UINTN MemMapSize;
     UINTN DescriptorSize;
     UINT32 DescriptorVersion;
     UINTN Retry;
+    BootInfo *BootInfoPtr;
+    CSOS_BOOT_SETUP SetupConfig;
+    BOOLEAN EnterSetup;
+    BOOLEAN BootRequested;
+    BOOLEAN SetupInitialized;
 
     (VOID) SystemTable;
 
-    Print(L"EfiBoot: starting\n");
+    ZeroMem(&SetupConfig, sizeof(SetupConfig));
+    SetupConfig.PreferEdid = 1;
 
-    //
-    // Open filesystem from the volume that loaded this image
-    //
+    SetupInitialized = FALSE;
+    Status = CsosSetupUtilityInit(ImageHandle);
+    if (!EFI_ERROR(Status))
+    {
+        SetupInitialized = TRUE;
+        CsosSetupUtilityGetConfig(&SetupConfig);
+    }
+    else
+    {
+        Print(L"EfiBoot: Setup Utility init failed: %r (continue without GUI)\n", Status);
+    }
+
+    Status = BootGraphicsApplyMode(&SetupConfig);
+    if (EFI_ERROR(Status))
+    {
+        Print(L"EfiBoot: graphics mode setup failed: %r\n", Status);
+    }
+
+    if (SetupInitialized)
+    {
+        Status = CsosSetupUtilityBeginUi();
+        if (EFI_ERROR(Status))
+        {
+            Print(L"EfiBoot: Setup Utility UI unavailable: %r (continue without GUI)\n", Status);
+            SetupInitialized = FALSE;
+        }
+        else
+        {
+            EnterSetup = FALSE;
+            BootRequested = FALSE;
+            if (SetupConfig.AutoBoot != 0)
+            {
+                Print(L"EfiBoot: press F2 for Setup, auto boot in %u sec\n",
+                      SetupConfig.BootTimeout);
+                CsosSetupUtilityWaitForKey(SetupConfig.BootTimeout, &EnterSetup);
+            }
+            else
+            {
+                EnterSetup = TRUE;
+            }
+
+            while (EnterSetup && !BootRequested)
+            {
+                Status = CsosSetupUtilityRun(&BootRequested);
+                if (EFI_ERROR(Status))
+                {
+                    Print(L"EfiBoot: Setup Utility failed: %r\n", Status);
+                    break;
+                }
+
+                if (!BootRequested)
+                {
+                    CsosSetupUtilityWaitForKey(SetupConfig.BootTimeout, &EnterSetup);
+                }
+            }
+
+            CsosSetupUtilityGetConfig(&SetupConfig);
+            BootGraphicsApplyMode(&SetupConfig);
+        }
+    }
+
     Status = gBS->HandleProtocol(
         ImageHandle,
         &gEfiLoadedImageProtocolGuid,
@@ -285,10 +203,9 @@ UefiMain(
         return Status;
     }
 
-    Print(L"EfiBoot: kernel loaded at 0x%lx, entry 0x%lx\n", KernelBase, EntryPoint);
-
     (VOID) KernelBase;
-    EFI_PHYSICAL_ADDRESS BootInfoPhys = CSOS_BOOT_INFO_ADDR;
+
+    BootInfoPhys = CSOS_BOOT_INFO_ADDR;
     Status = gBS->AllocatePages(
         AllocateAddress,
         EfiLoaderData,
@@ -311,9 +228,13 @@ UefiMain(
         Print(L"EfiBoot: InitGraphics failed: %r (continue without FB)\n", Status);
         BootInfoPtr->framebuffer_base = 0;
     }
-    //
-    // ExitBootServices & jump to kernel (retry if map key changes)
-    //
+
+    if (SetupInitialized)
+    {
+        CsosSetupUtilityFree();
+        SetupInitialized = FALSE;
+    }
+
     for (Retry = 0; Retry < 5; Retry++)
     {
         MemMap = NULL;
@@ -330,9 +251,6 @@ UefiMain(
             return Status;
         }
 
-        //
-        // Extra descriptors: map may grow between GetMemoryMap and ExitBootServices
-        //
         MemMapSize += SIZE_4KB;
         MemMap = AllocatePool(MemMapSize);
         if (MemMap == NULL)
@@ -373,7 +291,6 @@ UefiMain(
         return Status;
     }
 
-    // 跳转进入内核
     ((KERNEL_ENTRY)(UINTN)EntryPoint)(BootInfoPtr);
 
     return EFI_SUCCESS;

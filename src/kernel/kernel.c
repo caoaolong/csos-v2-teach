@@ -6,6 +6,7 @@
 #include <gdt.h>
 #include <idt.h>
 #include <memory/pmm.h>
+#include <gfx/fb.h>
 #include <gfx/logo.h>
 
 void kernel_main(boot_info_t *boot_info)
@@ -16,7 +17,7 @@ void kernel_main(boot_info_t *boot_info)
 
     init_pmm(boot_info);
 
-    fb_draw_image_centered(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
+    fb_draw_logo_splash(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
 
     for (;;)
     {

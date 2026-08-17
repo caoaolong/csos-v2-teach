@@ -1,5 +1,5 @@
 #include <gfx/fb.h>
-#include <gfx/logo.h>
+#include <gfx/layout.h>
 #include <serial.h>
 
 /* EFI_GRAPHICS_PIXEL_FORMAT */
@@ -22,27 +22,45 @@ static uint32_t xrgb_to_fb(uint32_t xrgb, uint32_t format)
     return (b << 16) | (g << 8) | r;
 }
 
-void fb_draw_image_centered(boot_info_t *boot,
-                            const uint32_t *pixels,
-                            uint32_t img_w,
-                            uint32_t img_h)
+static void fb_fill(boot_info_t *boot, uint32_t color_rgb)
 {
     uint32_t *fb;
     uint32_t stride;
-    int32_t x0;
-    int32_t y0;
-    uint32_t y;
-    uint32_t x;
+    uint32_t pixel;
+    uint32_t count;
+    uint32_t i;
 
-    if (boot == NULL || boot->framebuffer_base == 0 || pixels == NULL)
+    if (boot == NULL || boot->framebuffer_base == 0)
         return;
     if (boot->framebuffer_width == 0 || boot->framebuffer_height == 0)
         return;
 
     fb = (uint32_t *)(uintptr_t)boot->framebuffer_base;
     stride = boot->framebuffer_pixels_per_scanline;
-    x0 = ((int32_t)boot->framebuffer_width - (int32_t)img_w) / 2;
-    y0 = ((int32_t)boot->framebuffer_height - (int32_t)img_h) / 2;
+    pixel = xrgb_to_fb(color_rgb, boot->framebuffer_pixel_format);
+    count = stride * boot->framebuffer_height;
+
+    for (i = 0; i < count; i++)
+        fb[i] = pixel;
+}
+
+static void fb_draw_image_at(boot_info_t *boot,
+                             const uint32_t *pixels,
+                             uint32_t img_w,
+                             uint32_t img_h,
+                             int32_t x0,
+                             int32_t y0)
+{
+    uint32_t *fb;
+    uint32_t stride;
+    uint32_t y;
+    uint32_t x;
+
+    if (boot == NULL || boot->framebuffer_base == 0 || pixels == NULL)
+        return;
+
+    fb = (uint32_t *)(uintptr_t)boot->framebuffer_base;
+    stride = boot->framebuffer_pixels_per_scanline;
 
     for (y = 0; y < img_h; y++)
     {
@@ -67,4 +85,35 @@ void fb_draw_image_centered(boot_info_t *boot,
                 xrgb_to_fb(src, boot->framebuffer_pixel_format);
         }
     }
+}
+
+void fb_draw_image_centered(boot_info_t *boot,
+                            const uint32_t *pixels,
+                            uint32_t img_w,
+                            uint32_t img_h)
+{
+    int32_t x0;
+    int32_t y0;
+
+    if (boot == NULL || boot->framebuffer_base == 0 || pixels == NULL)
+        return;
+    if (boot->framebuffer_width == 0 || boot->framebuffer_height == 0)
+        return;
+
+    x0 = ((int32_t)boot->framebuffer_width - (int32_t)img_w) / 2;
+    y0 = ((int32_t)boot->framebuffer_height - (int32_t)img_h) / 2;
+    fb_draw_image_at(boot, pixels, img_w, img_h, x0, y0);
+}
+
+void fb_draw_logo_splash(boot_info_t *boot,
+                         const uint32_t *pixels,
+                         uint32_t img_w,
+                         uint32_t img_h)
+{
+    if (boot == NULL || boot->framebuffer_base == 0 || pixels == NULL)
+        return;
+
+    /* Same formula as EfiBoot DrawBootWaitScreen(): center the logo only. */
+    fb_fill(boot, LOGO_SPLASH_BG_RGB);
+    fb_draw_image_centered(boot, pixels, img_w, img_h);
 }
