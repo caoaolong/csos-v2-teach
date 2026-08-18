@@ -1,4 +1,14 @@
-/edk2
+# edk2 整体忽略，仅保留自研引导包与 HelloWorld 示例
+edk2/*
+!edk2/CsosBootPkg/
+!edk2/CsosBootPkg/**
+!edk2/MdeModulePkg/
+edk2/MdeModulePkg/*
+!edk2/MdeModulePkg/Application/
+edk2/MdeModulePkg/Application/*
+!edk2/MdeModulePkg/Application/HelloWorld/
+!edk2/MdeModulePkg/Application/HelloWorld/**
+
 /debug.log
 /build
 /examples/**/build

@@ -1,0 +1,24 @@
+[Defines]
+  INF_VERSION    = 0x00010006
+  BASE_NAME      = GopMode
+  FILE_GUID      = 3C8E6A1F-9B2D-4E5A-8F01-ABCDEF012345
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = UefiMain
+
+[Sources]
+  GopMode.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  CsosBootPkg/CsosBootPkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+  MemoryAllocationLib
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid
