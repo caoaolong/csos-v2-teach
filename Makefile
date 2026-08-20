@@ -14,7 +14,7 @@ EDK2_DIR   = edk2
 
 KERNEL     = $(BUILD_DIR)/kernel.elf
 
-CFLAGS = -ffreestanding -mno-red-zone -g -O0 -I$(INC_DIR) -MMD -MP
+CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -MMD -MP
 
 KERNEL_SRCS_C = $(wildcard $(KERNEL_DIR)/*.c) \
                 $(wildcard $(KERNEL_DIR)/*/*.c)

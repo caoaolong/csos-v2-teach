@@ -1,27 +1,17 @@
-.section .text
+.section .text.bootstrap
 .global _start
 
+.extern boot_enter_higher_half
+
 _start:
-    /* 设置栈 */
-    movabs $stack_top, %rsp
-
-    /* 清 BSS */
-    movabs $__bss_start, %rdi
-    movabs $__bss_end, %rcx
-    sub    %rdi, %rcx
-    xor    %rax, %rax
-    rep stosb
-
-    /* 调用 C 入口 */
-    mov $0x40000, %rdi
-    call kernel_main
+    /*
+     * BootInfo 固定在物理地址 0x40000（与 EfiBoot 约定）。
+     * bootstrap 在物理 0x100000 运行，完成页表后跳入高半核 kernel_main。
+     */
+    movabs $0x40000, %rdi
+    movabs $__boot_stack_top, %rsp
+    call boot_enter_higher_half
 
 1:
     hlt
     jmp 1b
-
-.section .bss
-.align 16
-stack_bottom:
-    .skip 8192
-stack_top:

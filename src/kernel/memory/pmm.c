@@ -1,8 +1,9 @@
 #include <memory/pmm.h>
 #include <memory/pmm_allocator.h>
+#include <serial.h>
 
-extern uint8_t __kernel_start[];
-extern uint8_t __kernel_end[];
+extern uint8_t __bootstrap_start[];
+extern uint8_t __kernel_phys_end[];
 
 #define PMM_MAX_PHYS (512ULL * 1024 * 1024)
 
@@ -98,8 +99,8 @@ void init_pmm(boot_info_t *boot)
     alloc->mark_used(0, PAGE_SIZE);
 
     /* 内核镜像（含栈所在 BSS）标为已用 */
-    kernel_start = page_align_down((uint64_t)(uintptr_t)__kernel_start);
-    kernel_end = page_align_up((uint64_t)(uintptr_t)__kernel_end);
+    kernel_start = page_align_down((uint64_t)(uintptr_t)__bootstrap_start);
+    kernel_end = page_align_up((uint64_t)(uintptr_t)__kernel_phys_end);
     alloc->mark_used(kernel_start, kernel_end);
 
     /* BootInfo 固定页 */
