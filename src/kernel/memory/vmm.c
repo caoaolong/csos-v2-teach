@@ -1,3 +1,4 @@
+#include <kernel_layout.h>
 #include <memory/vmm.h>
 #include <serial.h>
 #include <string.h>
@@ -26,6 +27,22 @@ static void invlpg(uint64_t vaddr)
 static void load_cr3(uint64_t pml4_phys)
 {
     __asm__ volatile("mov %0, %%cr3" : : "r"(pml4_phys) : "memory");
+}
+
+static int map_kernel_image(void)
+{
+    uint64_t phys = kernel_phys_start();
+    uint64_t virt = kernel_virt_start();
+    uint64_t end = kernel_phys_end();
+
+    while (phys < end)
+    {
+        if (map_page(virt, phys, PTE_PRESENT | PTE_WRITABLE) != 0)
+            return -1;
+        phys += PAGE_SIZE;
+        virt += PAGE_SIZE;
+    }
+    return 0;
 }
 
 uint64_t read_cr2()
@@ -176,9 +193,16 @@ void init_vmm(boot_info_t *boot)
     if (map_framebuffer(boot) != 0)
         return;
 
+    if (map_kernel_image() != 0)
+    {
+        put_string("[VMM] kernel higher-half map failed\n");
+        return;
+    }
+
     load_cr3((uint64_t)(uintptr_t)kernel_pml4);
     flush_tlb_all();
 
-    fput_string("[VMM] CR3=0x%llx identity 0x0-0x%llx\n",
-                read_cr3(), phys_end);
+    fput_string("[VMM] CR3=0x%llx identity 0x0-0x%llx kernel virt=0x%llx phys=0x%llx-0x%llx\n",
+                read_cr3(), phys_end,
+                kernel_virt_start(), kernel_phys_start(), kernel_phys_end());
 }

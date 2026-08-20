@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <serial.h>
 
 void __assert_fail(const char *expr, const char *file, int line)
 {

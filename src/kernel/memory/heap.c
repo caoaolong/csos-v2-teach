@@ -71,7 +71,7 @@ static heap_block_t *heap_add_page(void)
     void *page;
     heap_block_t *block;
 
-    page = alloc_page();
+    page = (void *)alloc_page();
     if (page == NULL)
         return NULL;
 
