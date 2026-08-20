@@ -6,6 +6,8 @@
 #include <gdt.h>
 #include <idt.h>
 #include <memory/pmm.h>
+#include <memory/vmm.h>
+#include <memory/heap.h>
 #include <gfx/fb.h>
 #include <gfx/logo.h>
 
@@ -16,6 +18,8 @@ void kernel_main(boot_info_t *boot_info)
     init_idt();
 
     init_pmm(boot_info);
+    init_vmm(boot_info);
+    init_heap();
 
     fb_draw_logo_splash(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
 
