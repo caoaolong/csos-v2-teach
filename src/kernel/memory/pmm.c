@@ -94,6 +94,9 @@ void init_pmm(boot_info_t *boot)
         ptr += boot->descriptor_size;
     }
 
+    /* 物理页 0 保留：alloc_page 返回 (void *)(page * PAGE_SIZE)，页 0 会变成 NULL */
+    alloc->mark_used(0, PAGE_SIZE);
+
     /* 内核镜像（含栈所在 BSS）标为已用 */
     kernel_start = page_align_down((uint64_t)(uintptr_t)__kernel_start);
     kernel_end = page_align_up((uint64_t)(uintptr_t)__kernel_end);
