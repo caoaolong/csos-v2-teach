@@ -110,5 +110,6 @@ extern void interrupt_handler_machine(void);
 extern void interrupt_handler_simd(void);
 extern void interrupt_handler_virtual(void);
 extern void interrupt_handler_control(void);
+extern void interrupt_handler_timer(void);
 
 #endif /* CSOS_IDT_H */

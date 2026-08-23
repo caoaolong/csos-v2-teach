@@ -10,6 +10,8 @@
 #include <memory/heap.h>
 #include <gfx/fb.h>
 #include <gfx/logo.h>
+#include <pic.h>
+#include <pit.h>
 
 void kernel_main(boot_info_t *boot_info)
 {
@@ -20,6 +22,11 @@ void kernel_main(boot_info_t *boot_info)
     init_pmm(boot_info);
     init_vmm(boot_info);
     init_heap();
+
+    init_pic();
+    if (init_pit(PIT_DEFAULT_HZ) != 0)
+        put_string("FATAL: init_pit failed\n");
+    __asm__ volatile("sti");
 
     fb_draw_logo_splash(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
 
