@@ -33,11 +33,11 @@ static void install_interrupt_handler(int vector, void (*handler)(void))
 
 static void exception_halt(exception_frame_t *frame, const char *name)
 {
-    fput_string("Exception %s vector=%d error=0x%x rip=0x%x\n",
+    fput_string("Exception %s vector=%d error=0x%x rip=0x%llx\n",
                 name,
                 (int)frame->vector,
                 (unsigned)frame->error_code,
-                (unsigned)frame->rip);
+                frame->rip);
 
     for (;;)
     {
@@ -75,6 +75,7 @@ void init_idt()
     install_interrupt_handler(19, interrupt_handler_simd);
     install_interrupt_handler(20, interrupt_handler_virtual);
     install_interrupt_handler(21, interrupt_handler_control);
+    install_interrupt_handler(32, interrupt_handler_timer); /* IRQ0 / PIT */
 
     load_idt();
 }
