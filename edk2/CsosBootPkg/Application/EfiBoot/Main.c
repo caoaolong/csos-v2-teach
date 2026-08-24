@@ -6,6 +6,7 @@
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/GraphicsOutput.h>
+#include <Guid/Acpi.h>
 #include "BootGraphics.h"
 #include "ElfLoader.h"
 #include "SetupUtility.h"
@@ -35,6 +36,30 @@ typedef struct
 } BootInfo;
 
 typedef VOID (*KERNEL_ENTRY)(BootInfo *);
+
+static EFI_STATUS
+FindAcpiRsdp(
+    OUT UINT64 *Rsdp)
+{
+    EFI_STATUS Status;
+    VOID *Table;
+
+    *Rsdp = 0;
+
+    Status = EfiGetSystemConfigurationTable(&gEfiAcpiTableGuid, &Table);
+    if (EFI_ERROR(Status))
+    {
+        Status = EfiGetSystemConfigurationTable(&gEfiAcpi10TableGuid, &Table);
+    }
+
+    if (EFI_ERROR(Status) || (Table == NULL))
+    {
+        return EFI_NOT_FOUND;
+    }
+
+    *Rsdp = (UINT64)(UINTN)Table;
+    return EFI_SUCCESS;
+}
 
 static EFI_STATUS
 InitGraphics(
@@ -221,6 +246,17 @@ UefiMain(
     BootInfoPtr = (BootInfo *)(UINTN)BootInfoPhys;
     ZeroMem(BootInfoPtr, sizeof(BootInfo));
     BootInfoPtr->magic = CSOS_BOOT_INFO_MAGIC;
+
+    Status = FindAcpiRsdp(&BootInfoPtr->rsdp);
+    if (EFI_ERROR(Status))
+    {
+        Print(L"EfiBoot: ACPI RSDP not found: %r\n", Status);
+        BootInfoPtr->rsdp = 0;
+    }
+    else
+    {
+        Print(L"EfiBoot: ACPI RSDP at 0x%lx\n", BootInfoPtr->rsdp);
+    }
 
     Status = InitGraphics(BootInfoPtr);
     if (EFI_ERROR(Status))

@@ -50,7 +50,8 @@ master: $(KERNEL)
 # 启动qemu模拟环境
 qemu: master
 	qemu-system-x86_64 \
-		-s -S -m 128M \
+		-s -S -m 512M \
+		-smp 4 \
 		-bios OVMF.fd \
 		-drive format=raw,file=fat:rw:qemu/hda-contents \
 		-net none \
