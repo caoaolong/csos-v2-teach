@@ -13,6 +13,7 @@
 #include <pic.h>
 #include <pit.h>
 #include <acpi.h>
+#include <apic/lapic.h>
 
 void kernel_main(boot_info_t *boot_info)
 {
@@ -20,10 +21,12 @@ void kernel_main(boot_info_t *boot_info)
     init_gdt();
     init_idt();
 
-    init_acpi(boot_info);
     init_pmm(boot_info);
     init_vmm(boot_info);
     init_heap();
+
+    init_acpi(boot_info);
+    init_lapic();
 
     init_pic();
     if (init_pit(PIT_DEFAULT_HZ) != 0)
