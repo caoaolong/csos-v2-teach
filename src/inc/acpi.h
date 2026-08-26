@@ -74,4 +74,6 @@ typedef struct madt_info
 
 void init_acpi(boot_info_t *boot);
 
+const madt_info_t *acpi_madt();
+
 #endif /*CSOS_ACPI_H*/

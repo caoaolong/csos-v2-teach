@@ -30,9 +30,6 @@ void init_pic(void)
 
     (void)mask1;
     (void)mask2;
-    /* 只开 IRQ0，slave 全关 */
-    outb(PIC1_DATA, 0xFE);
-    outb(PIC2_DATA, 0xFF);
 }
 
 void pic_eoi(uint8_t irq)
@@ -40,6 +37,12 @@ void pic_eoi(uint8_t irq)
     if (irq >= 8)
         outb(PIC2_CMD, PIC_EOI);
     outb(PIC1_CMD, PIC_EOI);
+}
+
+void pic_disable()
+{
+    outb(PIC1_DATA, 0xFF);
+    outb(PIC2_DATA, 0xFF);
 }
 
 void pic_mask(uint8_t irq)
