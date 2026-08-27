@@ -8,16 +8,16 @@
 #define PIT_CMD_CH0_MODE3 0x36
 #define PIT_INPUT_HZ 1193182u
 
-volatile uint64_t jiffies;
+// volatile uint64_t jiffies;
 
-void handler_timer(exception_frame_t *frame)
-{
-    (void)frame;
-    jiffies++;
-    if ((jiffies % PIT_DEFAULT_HZ) == 0)
-        fput_string("tick=%llu\n", jiffies);
-    pic_eoi(0);
-}
+// void handler_timer(exception_frame_t *frame)
+// {
+//     (void)frame;
+//     jiffies++;
+//     if ((jiffies % PIT_DEFAULT_HZ) == 0)
+//         fput_string("tick=%llu\n", jiffies);
+//     pic_eoi(0);
+// }
 
 int init_pit(uint32_t freq_hz)
 {

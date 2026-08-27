@@ -57,6 +57,51 @@ static inline void wrmsr(uint32_t msr, uint64_t value)
     __asm__ volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
 }
 
+void lapic_eoi()
+{
+    if (g_lapic != NULL)
+        lapic_write(LAPIC_EOI, 0);
+}
+
+void init_apic_timer(uint32_t freq_hz)
+{
+    uint32_t init_count;
+
+    if (freq_hz == 0)
+    {
+        put_string("FATAL: init_apic_timer freq_hz=0\n");
+        for (;;)
+            __asm__ volatile("hlt");
+    }
+
+    /*
+     * 未校准：按 QEMU 默认 APIC bus 1GHz、divide=16 推算。
+     * init = 1e9 / 16 / freq；freq==100 → 625000。
+     */
+    init_count = (APIC_TIMER_QEMU_INIT_COUNT * APIC_TIMER_DEFAULT_HZ) / freq_hz;
+    if (init_count == 0)
+        init_count = 1;
+
+    lapic_timer_start(init_count, APIC_TIMER_VECTOR);
+}
+
+void lapic_timer_start(uint32_t init_count, uint8_t vector)
+{
+    if (g_lapic == NULL)
+        lapic_halt("FATAL: lapic_timer_start before init_lapic\n");
+
+    /* 先停定时器 */
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+    lapic_write(LAPIC_INIT_COUNT, 0);
+
+    lapic_write(LAPIC_DIVIDE, LAPIC_DIVIDE_BY_16);
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_TIMER_PERIODIC | (uint32_t)vector);
+    lapic_write(LAPIC_INIT_COUNT, init_count);
+
+    fput_string("[LAPIC] timer periodic vector=%u init_count=%u (qemu hardcoded)\n",
+                (unsigned)vector, (unsigned)init_count);
+}
+
 void init_lapic()
 {
     const madt_info_t *madt;

@@ -13,7 +13,7 @@
 #include <pic.h>
 #include <pit.h>
 #include <acpi.h>
-#include <apic/lapic.h>
+#include <apic.h>
 
 void kernel_main(boot_info_t *boot_info)
 {
@@ -27,10 +27,8 @@ void kernel_main(boot_info_t *boot_info)
 
     init_acpi(boot_info);
     init_lapic();
+    init_apic_timer(APIC_TIMER_DEFAULT_HZ);
 
-    init_pic();
-    if (init_pit(PIT_DEFAULT_HZ) != 0)
-        put_string("FATAL: init_pit failed\n");
     __asm__ volatile("sti");
 
     fb_draw_logo_splash(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
