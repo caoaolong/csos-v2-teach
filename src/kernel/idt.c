@@ -76,8 +76,14 @@ void init_idt()
     install_interrupt_handler(20, interrupt_handler_virtual);
     install_interrupt_handler(21, interrupt_handler_control);
     install_interrupt_handler(32, interrupt_handler_timer); /* IRQ0 / PIT */
+    install_interrupt_handler(255, interrupt_handler_spurious);
 
     load_idt();
+}
+
+void handler_spurious(exception_frame_t *frame)
+{
+    (void *)frame;
 }
 
 void handler_default(exception_frame_t *frame)

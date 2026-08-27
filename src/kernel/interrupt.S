@@ -73,3 +73,4 @@ interrupt_handler control,          21,     1
 
 /* timer: 0x20 */
 interrupt_handler timer,            32,     0
+interrupt_handler spurious,         255,    0
