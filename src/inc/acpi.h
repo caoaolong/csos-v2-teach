@@ -1,4 +1,5 @@
 #ifndef CSOS_ACPI_H
+#define CSOS_ACPI_H
 
 #include <stdint.h>
 #include <kernel.h>
