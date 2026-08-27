@@ -18,6 +18,15 @@ void lapic_eoi();
 /* 周期模式：divide=/16，vector，initial count */
 void lapic_timer_start(uint32_t init_count, uint8_t vector);
 
+/* 停定时器（LVT masked，INIT_COUNT=0） */
+void lapic_timer_stop(void);
+
+/* 校准用：divide=/16，LVT masked，INIT_COUNT=0xFFFFFFFF 单向倒计时 */
+void lapic_timer_calib_start(void);
+
+/* 读 CUR_COUNT */
+uint32_t lapic_timer_current(void);
+
 /* 配置周期 APIC Timer；freq_hz==0 失败并 hlt */
 void init_apic_timer(uint32_t freq_hz);
 
