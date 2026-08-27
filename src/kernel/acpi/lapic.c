@@ -3,6 +3,7 @@
 #include <memory/vmm.h>
 #include <serial.h>
 #include <pic.h>
+#include <pit.h>
 
 #define LAPIC_ID 0x020
 #define LAPIC_VER 0x030
@@ -25,6 +26,13 @@
 static volatile uint32_t *g_lapic;
 
 static void lapic_halt(const char *msg)
+{
+    put_string(msg);
+    for (;;)
+        __asm__ volatile("hlt");
+}
+
+static void timer_halt(const char *msg)
 {
     put_string(msg);
     for (;;)
@@ -65,22 +73,48 @@ void lapic_eoi()
 
 void init_apic_timer(uint32_t freq_hz)
 {
+    uint32_t end_count;
+    uint32_t elapsed;
     uint32_t init_count;
+    uint64_t ticks_per_sec;
 
     if (freq_hz == 0)
-    {
-        put_string("FATAL: init_apic_timer freq_hz=0\n");
-        for (;;)
-            __asm__ volatile("hlt");
-    }
+        timer_halt("FATAL: init_apic_timer freq_hz=0\n");
 
-    /*
-     * 未校准：按 QEMU 默认 APIC bus 1GHz、divide=16 推算。
-     * init = 1e9 / 16 / freq；freq==100 → 625000。
-     */
-    init_count = (APIC_TIMER_QEMU_INIT_COUNT * APIC_TIMER_DEFAULT_HZ) / freq_hz;
+    /* 校准在 sti 之前；再 cli 一次做防御 */
+    __asm__ volatile("cli");
+
+    lapic_timer_stop();
+
+    if (pit_ch2_oneshot_start(PIT_CALIBRATE_MS) != 0)
+        timer_halt("FATAL: PIT Ch2 oneshot start failed\n");
+
+    /* 紧接 PIT 启动后开始倒计时，缩小窗口误差 */
+    lapic_timer_calib_start();
+
+    while (!pit_ch2_expired())
+        __asm__ volatile("pause");
+
+    end_count = lapic_timer_current();
+    pit_ch2_stop();
+    lapic_timer_stop();
+
+    elapsed = 0xFFFFFFFFu - end_count;
+    if (elapsed == 0)
+        timer_halt("FATAL: APIC timer calibration elapsed=0\n");
+
+    /* 10ms 窗口：ticks/sec = elapsed * 1000 / ms */
+    ticks_per_sec = ((uint64_t)elapsed * 1000ull) / (uint64_t)PIT_CALIBRATE_MS;
+    init_count = (uint32_t)(ticks_per_sec / (uint64_t)freq_hz);
     if (init_count == 0)
         init_count = 1;
+
+    fput_string("[LAPIC] calibrated %ums elapsed=%u ticks/sec=%llu init=%u (%uHz)\n",
+                (unsigned)PIT_CALIBRATE_MS,
+                (unsigned)elapsed,
+                (unsigned long long)ticks_per_sec,
+                (unsigned)init_count,
+                (unsigned)freq_hz);
 
     lapic_timer_start(init_count, APIC_TIMER_VECTOR);
 }
@@ -100,6 +134,35 @@ void lapic_timer_start(uint32_t init_count, uint8_t vector)
 
     fput_string("[LAPIC] timer periodic vector=%u init_count=%u (qemu hardcoded)\n",
                 (unsigned)vector, (unsigned)init_count);
+}
+
+void lapic_timer_stop(void)
+{
+    if (g_lapic == NULL)
+        lapic_halt("FATAL: lapic_timer_stop before init_lapic\n");
+
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+    lapic_write(LAPIC_INIT_COUNT, 0);
+}
+
+void lapic_timer_calib_start(void)
+{
+    if (g_lapic == NULL)
+        lapic_halt("FATAL: lapic_timer_calib_start before init_lapic\n");
+
+    /* 屏蔽 LVT，避免校准期间投递；oneshot（不置 PERIODIC） */
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+    lapic_write(LAPIC_INIT_COUNT, 0);
+    lapic_write(LAPIC_DIVIDE, LAPIC_DIVIDE_BY_16);
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+    lapic_write(LAPIC_INIT_COUNT, 0xFFFFFFFFu);
+}
+
+uint32_t lapic_timer_current(void)
+{
+    if (g_lapic == NULL)
+        lapic_halt("FATAL: lapic_timer_current before init_lapic\n");
+    return lapic_read(LAPIC_CUR_COUNT);
 }
 
 void init_lapic()
