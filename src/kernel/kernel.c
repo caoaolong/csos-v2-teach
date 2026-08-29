@@ -14,6 +14,7 @@
 #include <pit.h>
 #include <acpi.h>
 #include <apic.h>
+#include <apic/ioapic.h>
 
 void kernel_main(boot_info_t *boot_info)
 {
@@ -27,6 +28,7 @@ void kernel_main(boot_info_t *boot_info)
 
     init_acpi(boot_info);
     init_lapic();
+    init_ioapic();
     init_apic_timer(APIC_TIMER_DEFAULT_HZ);
 
     __asm__ volatile("sti");
