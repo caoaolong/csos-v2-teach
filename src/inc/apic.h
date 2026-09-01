@@ -15,6 +15,9 @@ void init_lapic();
 
 void lapic_eoi();
 
+/* 当前 CPU 的 Local APIC ID（物理模式 destination） */
+uint32_t lapic_id();
+
 /* 周期模式：divide=/16，vector，initial count */
 void lapic_timer_start(uint32_t init_count, uint8_t vector);
 

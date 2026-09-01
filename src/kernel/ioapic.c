@@ -57,6 +57,103 @@ static void ioapic_write_rte(ioapic_dev_t *dev, uint32_t pin, uint32_t low, uint
     ioapic_write(dev, reg, low);
 }
 
+static ioapic_dev_t *ioapic_for_gsi(uint32_t gsi, uint32_t *pin_out)
+{
+    uint32_t i;
+
+    for (i = 0; i < g_ioapic_count; i++)
+    {
+        ioapic_dev_t *dev = &g_ioapics[i];
+        uint32_t pins = dev->max_redir + 1u;
+
+        if (gsi >= dev->gsi_base && gsi < dev->gsi_base + pins)
+        {
+            *pin_out = gsi - dev->gsi_base;
+            return dev;
+        }
+    }
+    return NULL;
+}
+
+static void isa_irq_to_gsi(uint8_t isa_irq, uint32_t *gsi_out, uint32_t *rte_flags_out)
+{
+    const madt_info_t *madt = acpi_madt();
+    uint32_t i;
+    uint32_t gsi = (uint32_t)isa_irq;
+    uint32_t rte = 0; /* ISA 默认：edge + active high */
+
+    if (madt != NULL)
+    {
+        for (i = 0; i < madt->override_count; i++)
+        {
+            const acpi_iso_t *iso = &madt->overrides[i];
+            if (iso->bus != 0 || iso->irq != isa_irq)
+                continue;
+
+            gsi = iso->gsi;
+
+            switch (iso->flags & ACPI_MADT_POLARITY_MASK)
+            {
+            case 0x1: /* active high */
+                break;
+            case 0x3: /* active low */
+                rte |= IOAPIC_REDTBL_ACTIVE_LOW;
+                break;
+            default: /* conforming：ISA → high */
+                break;
+            }
+
+            switch (iso->flags & ACPI_MADT_TRIGGER_MASK)
+            {
+            case 0x4: /* edge */
+                break;
+            case 0xC: /* level */
+                rte |= IOAPIC_REDTBL_LEVEL;
+                break;
+            default: /* conforming：ISA → edge */
+                break;
+            }
+            break;
+        }
+    }
+
+    *gsi_out = gsi;
+    *rte_flags_out = rte;
+}
+
+void ioapic_route_isa_irq(uint8_t isa_irq, uint8_t vector, uint32_t dest_lapic_id)
+{
+    uint32_t gsi;
+    uint32_t flags;
+    uint32_t pin;
+    ioapic_dev_t *dev;
+    uint32_t low;
+    uint32_t high;
+
+    isa_irq_to_gsi(isa_irq, &gsi, &flags);
+    dev = ioapic_for_gsi(gsi, &pin);
+    if (dev == NULL)
+    {
+        fput_string("FATAL: no IOAPIC covers GSI %u (ISA IRQ %u)\n",
+                    (unsigned)gsi, (unsigned)isa_irq);
+        for (;;)
+            __asm__ volatile("hlt");
+    }
+
+    /* Fixed delivery、物理模式、unmasked */
+    low = (uint32_t)vector | flags;
+    high = dest_lapic_id << 24;
+
+    ioapic_write_rte(dev, pin, low, high);
+
+    fput_string("[IOAPIC] route ISA IRQ%u -> GSI %u pin %u vec %u dest %u\n",
+                (unsigned)isa_irq,
+                (unsigned)gsi,
+                (unsigned)pin,
+                (unsigned)vector,
+                (unsigned)dest_lapic_id);
+}
+
 void init_ioapic()
 {
     const madt_info_t *madt;

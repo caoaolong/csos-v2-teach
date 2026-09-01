@@ -71,6 +71,13 @@ void lapic_eoi()
         lapic_write(LAPIC_EOI, 0);
 }
 
+uint32_t lapic_id()
+{
+    if (g_lapic == NULL)
+        lapic_halt("FATAL: lapic_id before init_lapic\n");
+    return lapic_read(LAPIC_ID) >> 24;
+}
+
 void init_apic_timer(uint32_t freq_hz)
 {
     uint32_t end_count;
