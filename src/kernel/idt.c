@@ -77,6 +77,7 @@ void init_idt()
     install_interrupt_handler(21, interrupt_handler_control);
     install_interrupt_handler(32, interrupt_handler_timer); /* IRQ0 / PIT */
     install_interrupt_handler(33, interrupt_handler_kbd);
+    install_interrupt_handler(34, interrupt_handler_yield);
     install_interrupt_handler(255, interrupt_handler_spurious);
 
     load_idt();
