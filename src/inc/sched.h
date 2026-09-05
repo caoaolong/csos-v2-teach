@@ -7,13 +7,22 @@
 /* 协作式 yield：软件中断，与 timer 共用 exception_frame 切换路径 */
 #define SCHED_YIELD_VECTOR 34
 
+typedef enum task_state
+{
+    TASK_READY = 0,
+    TASK_SLEEPING,
+} task_state_t;
+
 typedef struct task
 {
-    uint64_t rsp;        /* 指向栈上 exception_frame_t */
-    struct task *next;   /* 环形就绪队列 */
-    void (*entry)(void); /* 入口（仅新建时使用） */
+    uint64_t rsp;            /* 指向栈上 exception_frame_t */
+    struct task *next;       /* 环形就绪队列（仅 READY） */
+    struct task *sleep_next; /* 睡眠链表 */
+    void (*entry)(void);     /* 入口（仅新建时使用） */
     const char *name;
     void *stack_page; /* alloc_page；idle 为 NULL */
+    task_state_t state;
+    uint64_t wake_jiffies; /* state==SLEEPING 时的唤醒时刻 */
 } task_t;
 
 extern task_t *current;
@@ -23,6 +32,12 @@ void init_sched(void);
 
 /* 新建内核线程并链入就绪环；失败返回 NULL */
 task_t *task_create(void (*entry)(void), const char *name);
+
+/* timer：jiffies++ 后调用，把到期任务挂回就绪环 */
+void sched_wake_sleepers(void);
+
+/* 阻塞睡眠至少 jf 个 jiffy（0 立即返回）；可被抢占路径摘环 */
+void sched_sleep_jiffies(uint64_t jf);
 
 /*
  * 中断路径调度：保存 frame 到 current，切到 next，返回新 rsp。

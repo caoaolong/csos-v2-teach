@@ -3,6 +3,7 @@
 #include <serial.h>
 #include <timer.h>
 #include <apic.h>
+#include <sched.h>
 
 static uint32_t g_timer_hz = APIC_TIMER_DEFAULT_HZ;
 
@@ -18,8 +19,7 @@ void handler_timer(exception_frame_t *frame)
 {
     (void)frame;
     jiffies++;
-    // if ((jiffies % APIC_TIMER_DEFAULT_HZ) == 0)
-    //     fput_string("tick=%llu\n", jiffies);
+    sched_wake_sleepers();
     lapic_eoi();
 }
 
@@ -61,12 +61,8 @@ uint64_t uptime_ms()
 
 void msleep(uint64_t ms)
 {
-    uint64_t target;
-
     if (ms == 0)
         return;
-
-    target = jiffies + ms_to_jiffies(ms);
-    while (jiffies < target)
-        __asm__ volatile("hlt");
+    /* 阻塞：离开就绪环，到点由 timer 唤醒；不再占用 RR 时间片 */
+    sched_sleep_jiffies(ms_to_jiffies(ms));
 }

@@ -17,6 +17,7 @@
       "name": "QEMU Kernel (gdb)",
       "type": "cppdbg",
       "request": "launch",
+      "internalConsoleOptions": "neverOpen",
       "program": "${workspaceFolder}/build/kernel.elf",
       "cwd": "${workspaceFolder}",
       "MIMode": "gdb",

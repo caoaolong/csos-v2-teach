@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+extern volatile uint64_t jiffies;
+
 /* 由 init_apic_timer 写入实际 Hz；换算与 sleep 依赖此值 */
 void timer_set_hz(uint32_t hz);
 uint32_t timer_hz();

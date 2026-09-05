@@ -4,6 +4,10 @@
 #include <string.h>
 #include <serial.h>
 #include <gdt.h>
+#include <apic.h>
+#include <timer.h>
+
+static task_t *g_sleep_head;
 
 task_t *current;
 
@@ -24,14 +28,56 @@ static void task_bootstrap(void)
         __asm__ volatile("hlt");
 }
 
-void init_sched(void)
+static void ready_enqueue(task_t *t)
+{
+    task_t *tail;
+
+    if (t == NULL || t == &g_idle)
+        return;
+    if (t->next != t)
+        return;
+
+    tail = &g_idle;
+    while (tail->next != &g_idle)
+        tail = tail->next;
+    t->next = &g_idle;
+    tail->next = t;
+}
+
+static void ready_unlink(task_t *t)
+{
+    task_t *prev;
+
+    if (t == NULL || t == &g_idle)
+        return;
+    if (t->next == t)
+        return;
+
+    prev = t;
+    while (prev->next != t)
+        prev = prev->next;
+    prev->next = t->next;
+    t->next = t;
+}
+
+static void sleep_enqueue(task_t *t)
+{
+    t->sleep_next = g_sleep_head;
+    g_sleep_head = t;
+}
+
+void init_sched()
 {
     g_idle.rsp = 0;
     g_idle.next = &g_idle;
+    g_idle.sleep_next = NULL;
     g_idle.entry = NULL;
     g_idle.name = "idle";
     g_idle.stack_page = NULL;
+    g_idle.state = TASK_READY;
+    g_idle.wake_jiffies = 0;
 
+    g_sleep_head = NULL;
     current = &g_idle;
     g_sched_on = 1;
 
@@ -44,17 +90,14 @@ task_t *task_create(void (*entry)(void), const char *name)
     uint8_t *stack;
     uintptr_t top;
     exception_frame_t *f;
-    task_t *tail;
 
     if (!g_sched_on || entry == NULL)
         return NULL;
 
-    /* 分配任务控制块 */
     t = (task_t *)kmalloc(sizeof(task_t));
     if (t == NULL)
         return NULL;
 
-    /* 分配任务栈 */
     stack = (uint8_t *)alloc_page();
     if (stack == NULL)
     {
@@ -72,23 +115,19 @@ task_t *task_create(void (*entry)(void), const char *name)
     t->entry = entry;
     t->name = name ? name : "?";
     t->stack_page = stack;
+    t->state = TASK_READY;
+    t->sleep_next = NULL;
+    t->next = t;
 
     f->rip = (uint64_t)(uintptr_t)task_bootstrap;
     f->cs = KERNEL_CODE_SEG;
-    /* bit1 恒为 1；IF=1 以便新线程可被抢占 / 使用 msleep */
     f->rflags = 0x202;
-    /* SysV：函数入口处 rsp % 16 == 8 */
     f->rsp = top - 8;
     f->ss = KERNEL_DATA_SEG;
 
     t->rsp = (uint64_t)(uintptr_t)f;
 
-    /* 插到环尾（current 之后一圈的末尾） */
-    tail = current;
-    while (tail->next != current)
-        tail = tail->next;
-    t->next = current;
-    tail->next = t;
+    ready_enqueue(t);
 
     fput_string("[SCHED] create '%s' stack=0x%x frame=0x%x\n",
                 t->name, (unsigned)(uintptr_t)stack, (unsigned)(uintptr_t)f);
@@ -97,14 +136,24 @@ task_t *task_create(void (*entry)(void), const char *name)
 
 uint64_t schedule_from_irq(exception_frame_t *frame)
 {
+    task_t *next;
+
     if (!g_sched_on || current == NULL || frame == NULL)
         return (uint64_t)(uintptr_t)frame;
 
-    if (current->next == current)
-        return (uint64_t)(uintptr_t)frame;
-
     current->rsp = (uint64_t)(uintptr_t)frame;
-    current = current->next;
+
+    if (current->state == TASK_SLEEPING || current->next == current)
+    {
+        /* 已离开就绪环：下一个为 idle 之后的任务（或 idle 自己） */
+        next = g_idle.next;
+    }
+    else
+    {
+        next = current->next;
+    }
+
+    current = next;
     return current->rsp;
 }
 
@@ -116,4 +165,45 @@ void yield(void)
 void handler_yield(exception_frame_t *frame)
 {
     (void)frame;
+}
+
+void sched_wake_sleepers(void)
+{
+    task_t **pp;
+    task_t *t;
+
+    pp = &g_sleep_head;
+    while (*pp != NULL)
+    {
+        t = *pp;
+        if (jiffies >= t->wake_jiffies)
+        {
+            *pp = t->sleep_next;
+            t->sleep_next = NULL;
+            t->state = TASK_READY;
+            ready_enqueue(t);
+        }
+        else
+        {
+            pp = &t->sleep_next;
+        }
+    }
+}
+
+void sched_sleep_jiffies(uint64_t jf)
+{
+    if (jf == 0 || !g_sched_on || current == NULL)
+        return;
+
+    if (current == &g_idle)
+        return;
+
+    __asm__ volatile("cli");
+    current->wake_jiffies = jiffies + jf;
+    current->state = TASK_SLEEPING;
+    ready_unlink(current);
+    sleep_enqueue(current);
+    __asm__ volatile("sti");
+
+    yield();
 }
