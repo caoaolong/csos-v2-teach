@@ -23,8 +23,9 @@ static void thread_a(void)
 {
     for (;;)
     {
-        put_string("A");
-        msleep(100);
+        put_string("AAAAAAAAAA\n");
+        // msleep(100);
+        yield();
     }
 }
 
@@ -32,8 +33,9 @@ static void thread_b(void)
 {
     for (;;)
     {
-        put_string("B");
-        msleep(100);
+        put_string("BBBBBBBBBB\n");
+        // msleep(100);
+        yield();
     }
 }
 
