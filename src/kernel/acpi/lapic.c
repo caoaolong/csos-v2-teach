@@ -4,6 +4,7 @@
 #include <serial.h>
 #include <pic.h>
 #include <pit.h>
+#include <cpu.h>
 
 #define LAPIC_ID 0x020
 #define LAPIC_VER 0x030
@@ -51,19 +52,19 @@ static void lapic_write(uint32_t reg, uint32_t value)
     (void)lapic_read(LAPIC_ID);
 }
 
-static inline uint64_t rdmsr(uint32_t msr)
-{
-    uint32_t lo, hi;
-    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
-    return ((uint64_t)hi << 32) | lo;
-}
+// static inline uint64_t rdmsr(uint32_t msr)
+// {
+//     uint32_t lo, hi;
+//     __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+//     return ((uint64_t)hi << 32) | lo;
+// }
 
-static inline void wrmsr(uint32_t msr, uint64_t value)
-{
-    uint32_t lo = (uint32_t)value;
-    uint32_t hi = (uint32_t)(value >> 32);
-    __asm__ volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
-}
+// static inline void wrmsr(uint32_t msr, uint64_t value)
+// {
+//     uint32_t lo = (uint32_t)value;
+//     uint32_t hi = (uint32_t)(value >> 32);
+//     __asm__ volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
+// }
 
 void lapic_eoi()
 {

@@ -6,6 +6,9 @@
 #include <gdt.h>
 #include <apic.h>
 #include <timer.h>
+#include <spinlock.h>
+
+static spinlock_t g_sched_lock = SPINLOCK_INIT;
 
 static task_t *g_sleep_head;
 
@@ -127,7 +130,9 @@ task_t *task_create(void (*entry)(void), const char *name)
 
     t->rsp = (uint64_t)(uintptr_t)f;
 
+    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
     ready_enqueue(t);
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 
     fput_string("[SCHED] create '%s' stack=0x%x frame=0x%x\n",
                 t->name, (unsigned)(uintptr_t)stack, (unsigned)(uintptr_t)f);
@@ -137,10 +142,13 @@ task_t *task_create(void (*entry)(void), const char *name)
 uint64_t schedule_from_irq(exception_frame_t *frame)
 {
     task_t *next;
+    uint64_t flags;
+    uint64_t next_rsp;
 
     if (!g_sched_on || current == NULL || frame == NULL)
         return (uint64_t)(uintptr_t)frame;
 
+    flags = spin_lock_irqsave(&g_sched_lock);
     current->rsp = (uint64_t)(uintptr_t)frame;
 
     if (current->state == TASK_SLEEPING || current->next == current)
@@ -153,8 +161,10 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
         next = current->next;
     }
 
+    next_rsp = next->rsp;
     current = next;
-    return current->rsp;
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+    return next_rsp;
 }
 
 void yield(void)
@@ -171,6 +181,7 @@ void sched_wake_sleepers(void)
 {
     task_t **pp;
     task_t *t;
+    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
 
     pp = &g_sleep_head;
     while (*pp != NULL)
@@ -188,6 +199,7 @@ void sched_wake_sleepers(void)
             pp = &t->sleep_next;
         }
     }
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 }
 
 void sched_sleep_jiffies(uint64_t jf)
@@ -198,12 +210,12 @@ void sched_sleep_jiffies(uint64_t jf)
     if (current == &g_idle)
         return;
 
-    __asm__ volatile("cli");
+    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
     current->wake_jiffies = jiffies + jf;
     current->state = TASK_SLEEPING;
     ready_unlink(current);
     sleep_enqueue(current);
-    __asm__ volatile("sti");
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 
     yield();
 }
