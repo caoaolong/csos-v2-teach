@@ -24,6 +24,16 @@
 #define LAPIC_LVT_MASKED (1u << 16)
 #define LAPIC_DIVIDE_BY_16 0x3u
 
+#define LAPIC_ICR_LOW 0x300
+#define LAPIC_ICR_HIGH 0x310
+
+#define ICR_VECTOR_MASK 0xFFu
+#define ICR_DELIVERY_INIT (5u << 8)
+#define ICR_DELIVERY_SIPI (6u << 8)
+#define ICR_DELIVERY_STATUS (1u << 12)
+#define ICR_LEVEL_ASSERT (1u << 14)
+#define ICR_TRIGGER_LEVEL (1u << 15)
+
 static volatile uint32_t *g_lapic;
 
 static void lapic_halt(const char *msg)
@@ -52,20 +62,6 @@ static void lapic_write(uint32_t reg, uint32_t value)
     (void)lapic_read(LAPIC_ID);
 }
 
-// static inline uint64_t rdmsr(uint32_t msr)
-// {
-//     uint32_t lo, hi;
-//     __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
-//     return ((uint64_t)hi << 32) | lo;
-// }
-
-// static inline void wrmsr(uint32_t msr, uint64_t value)
-// {
-//     uint32_t lo = (uint32_t)value;
-//     uint32_t hi = (uint32_t)(value >> 32);
-//     __asm__ volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
-// }
-
 void lapic_eoi()
 {
     if (g_lapic != NULL)
@@ -77,6 +73,48 @@ uint32_t lapic_id()
     if (g_lapic == NULL)
         lapic_halt("FATAL: lapic_id before init_lapic\n");
     return lapic_read(LAPIC_ID) >> 24;
+}
+
+static void lapic_wait_icr(void)
+{
+    while (lapic_read(LAPIC_ICR_LOW) & ICR_DELIVERY_STATUS)
+        cpu_pause();
+}
+
+static void lapic_icr_write(uint32_t dest_apic_id, uint32_t low)
+{
+    lapic_wait_icr();
+    lapic_write(LAPIC_ICR_HIGH, dest_apic_id << 24);
+    lapic_write(LAPIC_ICR_LOW, low);
+}
+
+/* INIT-SIPI-SIPI：vector_page 为 trampoline 物理页号（物理地址 >> 12） */
+void lapic_start_ap(uint32_t apic_id, uint8_t vector_page)
+{
+    uint32_t i;
+
+    if (g_lapic == NULL)
+        lapic_halt("FATAL: lapic_start_ap before init_lapic\n");
+
+    /* INIT assert */
+    lapic_icr_write(apic_id,
+                    ICR_DELIVERY_INIT | ICR_LEVEL_ASSERT | ICR_TRIGGER_LEVEL);
+    /* Intel 建议： */
+    for (i = 0; i < 1000000; i++)
+        cpu_pause();
+
+    /* INIT deassert */
+    lapic_icr_write(apic_id, ICR_DELIVERY_INIT | ICR_TRIGGER_LEVEL);
+    /* Intel 建议： */
+    for (i = 0; i < 1000000; i++)
+        cpu_pause();
+
+    /* SIPI × 2 */
+    lapic_icr_write(apic_id, ICR_DELIVERY_SIPI | (vector_page & ICR_VECTOR_MASK));
+    /* Intel 建议：SIPI 后等待约 200 微秒 */
+    for (i = 0; i < 20000; i++)
+        cpu_pause();
+    lapic_icr_write(apic_id, ICR_DELIVERY_SIPI | (vector_page & ICR_VECTOR_MASK));
 }
 
 void init_apic_timer(uint32_t freq_hz)

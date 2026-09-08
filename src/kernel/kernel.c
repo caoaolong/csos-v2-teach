@@ -18,6 +18,7 @@
 #include <kbd.h>
 #include <timer.h>
 #include <sched.h>
+#include <smp.h>
 
 static void thread_a(void)
 {
@@ -55,6 +56,7 @@ void kernel_main(boot_info_t *boot_info)
     init_kbd();
     init_apic_timer(APIC_TIMER_DEFAULT_HZ);
     init_sched();
+    init_smp();
 
     if (task_create(thread_a, "A") == NULL || task_create(thread_b, "B") == NULL)
         put_string("FATAL: task_create failed\n");
