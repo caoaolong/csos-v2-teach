@@ -12,3 +12,4 @@ edk2/MdeModulePkg/Application/*
 /debug.log
 /build
 /examples/**/build
+/.opencode
