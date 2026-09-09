@@ -18,7 +18,9 @@ void handler_spurious(exception_frame_t *frame)
 void handler_timer(exception_frame_t *frame)
 {
     (void)frame;
-    jiffies++;
+    /* 多核都开 timer 时只让 BSP 推进全局 jiffies，避免倍速 */
+    if (is_bsp())
+        jiffies++;
     sched_wake_sleepers();
     lapic_eoi();
 }

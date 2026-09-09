@@ -83,6 +83,11 @@ void init_idt()
     load_idt();
 }
 
+void idt_reload()
+{
+    load_idt();
+}
+
 void handler_default(exception_frame_t *frame)
 {
     exception_halt(frame, "default");

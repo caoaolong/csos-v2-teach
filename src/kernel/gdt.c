@@ -65,3 +65,8 @@ void init_gdt()
 
     load_gdt();
 }
+
+void gdt_reload()
+{
+    load_gdt();
+}

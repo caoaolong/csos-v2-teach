@@ -6,6 +6,8 @@
 #include <serial.h>
 #include <string.h>
 #include <memory/vmm.h>
+#include <gdt.h>
+#include <idt.h>
 
 #define ACPI_LAPIC_ENABLED (1u << 0)
 #define SMP_TRAMPOLINE_PHYS 0x8000ULL
@@ -123,9 +125,17 @@ void init_smp()
 
 void ap_main()
 {
+    gdt_reload();
+    idt_reload();
+    lapic_ap_init();
+    sched_cpu_init();
+    apic_timer_start_calibrated();
+
+    fput_string("[SMP] AP apic_id=%u online\n", (unsigned)lapic_id());
     bootinfo_at_trampoline()->started = 1;
+
+    __asm__ volatile("sti");
+
     for (;;)
-    {
-        cpu_pause();
-    }
+        __asm__ volatile("hlt");
 }
