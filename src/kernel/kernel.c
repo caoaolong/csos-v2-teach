@@ -20,23 +20,21 @@
 #include <sched.h>
 #include <smp.h>
 
-static void thread_a(void)
+static void thread_a()
 {
     for (;;)
     {
-        put_string("AAAAAAAAAA\n");
-        // msleep(100);
-        yield();
+        fput_string("A(cpu=%u)", (unsigned)lapic_id());
+        msleep(100);
     }
 }
 
-static void thread_b(void)
+static void thread_b()
 {
     for (;;)
     {
-        put_string("BBBBBBBBBB\n");
-        // msleep(100);
-        yield();
+        fput_string("B(cpu=%u)", (unsigned)lapic_id());
+        msleep(100);
     }
 }
 

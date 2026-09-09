@@ -62,6 +62,9 @@ typedef struct idtr
 void init_idt();
 void set_interrupt_gate(int vector, uint64_t offset, uint16_t selector, uint16_t attr);
 
+/* AP：装载与 BSP 相同的 IDT */
+void idt_reload();
+
 /* 中断向量及处理函数 */
 extern void interrupt_handler_default();
 void handler_default();

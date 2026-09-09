@@ -42,4 +42,7 @@ typedef struct gdtr
 void init_gdt();
 void set_gdt_entry(int selector, uint32_t base, uint32_t limit, uint16_t attr);
 
+/* AP：装载与 BSP 相同的内核 GDT 并刷新段寄存器 */
+void gdt_reload();
+
 #endif /* CSOS_GDT_H */

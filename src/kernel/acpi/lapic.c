@@ -5,6 +5,7 @@
 #include <pic.h>
 #include <pit.h>
 #include <cpu.h>
+#include <timer.h>
 
 #define LAPIC_ID 0x020
 #define LAPIC_VER 0x030
@@ -33,6 +34,11 @@
 #define ICR_DELIVERY_STATUS (1u << 12)
 #define ICR_LEVEL_ASSERT (1u << 14)
 #define ICR_TRIGGER_LEVEL (1u << 15)
+
+/* BSP 校准后的周期初值；AP 直接复用 */
+static uint32_t g_apic_timer_init_count;
+
+uint32_t g_bsp_apic_id;
 
 static volatile uint32_t *g_lapic;
 
@@ -153,16 +159,14 @@ void init_apic_timer(uint32_t freq_hz)
     ticks_per_sec = ((uint64_t)elapsed * 1000ull) / (uint64_t)PIT_CALIBRATE_MS;
     init_count = (uint32_t)(ticks_per_sec / (uint64_t)freq_hz);
     if (init_count == 0)
-        init_count = 1;
+        timer_halt("FATAL: APIC timer init_count=0\n");
 
-    fput_string("[LAPIC] calibrated %ums elapsed=%u ticks/sec=%llu init=%u (%uHz)\n",
-                (unsigned)PIT_CALIBRATE_MS,
-                (unsigned)elapsed,
-                (unsigned long long)ticks_per_sec,
-                (unsigned)init_count,
-                (unsigned)freq_hz);
-
+    g_apic_timer_init_count = init_count;
+    timer_set_hz(freq_hz);
     lapic_timer_start(init_count, APIC_TIMER_VECTOR);
+
+    fput_string("[LAPIC] timer periodic vector=%u init_count=%u hz=%u\n",
+                (unsigned)APIC_TIMER_VECTOR, (unsigned)init_count, (unsigned)freq_hz);
 }
 
 void lapic_timer_start(uint32_t init_count, uint8_t vector)
@@ -211,6 +215,13 @@ uint32_t lapic_timer_current(void)
     return lapic_read(LAPIC_CUR_COUNT);
 }
 
+void apic_timer_start_calibrated()
+{
+    if (g_apic_timer_init_count == 0)
+        timer_halt("FATAL: apic_timer_start_calibrated before init_apic_timer\n");
+    lapic_timer_start(g_apic_timer_init_count, APIC_TIMER_VECTOR);
+}
+
 void init_lapic()
 {
     const madt_info_t *madt;
@@ -254,6 +265,21 @@ void init_lapic()
 
     id = lapic_read(LAPIC_ID) >> 24;
     ver = lapic_read(LAPIC_VER) & 0xFF;
+    g_bsp_apic_id = id;
     fput_string("[LAPIC] base=0x%llx id=%u version=0x%x\n",
                 (unsigned long long)phys, (unsigned)id, (unsigned)ver);
+}
+
+void lapic_ap_init()
+{
+    uint64_t msr;
+
+    if (g_lapic == NULL)
+        lapic_halt("FATAL: lapic_ap_init: LAPIC not mapped\n");
+
+    msr = rdmsr(IA32_APIC_BASE_MSR);
+    msr |= APIC_BASE_ENABLE;
+    wrmsr(IA32_APIC_BASE_MSR, msr);
+
+    lapic_write(LAPIC_SVR, LAPIC_SVR_ENABLE | APIC_SPURIOUS_VECTOR);
 }
