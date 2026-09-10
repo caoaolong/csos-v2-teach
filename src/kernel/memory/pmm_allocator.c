@@ -2,7 +2,7 @@
 
 static const pmm_allocator_ops_t *current_allocator;
 
-const pmm_allocator_ops_t *pmm_allocator_current(void)
+const pmm_allocator_ops_t *pmm_allocator_current()
 {
     if (current_allocator == NULL)
         return pmm_allocator_bitmap();

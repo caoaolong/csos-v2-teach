@@ -67,7 +67,7 @@ static void kbd_halt(const char *msg)
         __asm__ volatile("hlt");
 }
 
-static void kbd_wait_ibf_clear(void)
+static void kbd_wait_ibf_clear()
 {
     int spins = 100000;
     while ((inb(KBD_STATUS) & KBD_STAT_IBF) != 0)
@@ -77,7 +77,7 @@ static void kbd_wait_ibf_clear(void)
     }
 }
 
-static void kbd_wait_obf_set(void)
+static void kbd_wait_obf_set()
 {
     int spins = 100000;
     while ((inb(KBD_STATUS) & KBD_STAT_OBF) == 0)
@@ -87,7 +87,7 @@ static void kbd_wait_obf_set(void)
     }
 }
 
-static void kbd_flush_output(void)
+static void kbd_flush_output()
 {
     int i;
     for (i = 0; i < 100; i++)
@@ -110,7 +110,7 @@ static void kbd_write_data(uint8_t data)
     outb(KBD_DATA, data);
 }
 
-static uint8_t kbd_read_data(void)
+static uint8_t kbd_read_data()
 {
     kbd_wait_obf_set();
     return inb(KBD_DATA);
@@ -147,7 +147,7 @@ void handler_kbd(exception_frame_t *frame)
     lapic_eoi();
 }
 
-void init_kbd(void)
+void init_kbd()
 {
     uint8_t cfg;
 

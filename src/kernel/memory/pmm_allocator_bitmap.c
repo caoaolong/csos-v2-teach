@@ -80,7 +80,7 @@ static void bitmap_mark_free(uint64_t start, uint64_t end)
     }
 }
 
-static uint64_t bitmap_alloc_page(void)
+static uint64_t bitmap_alloc_page()
 {
     uint64_t page = bitmap_find_first_clear(&page_bitmap);
 
@@ -115,12 +115,12 @@ static void bitmap_free_page(uint64_t page)
     }
 }
 
-static uint64_t bitmap_total_pages(void)
+static uint64_t bitmap_total_pages()
 {
     return managed_pages;
 }
 
-static uint64_t bitmap_free_pages(void)
+static uint64_t bitmap_free_pages()
 {
     return free_pages;
 }
@@ -136,7 +136,7 @@ static const pmm_allocator_ops_t bitmap_allocator = {
     .free_pages = bitmap_free_pages,
 };
 
-const pmm_allocator_ops_t *pmm_allocator_bitmap(void)
+const pmm_allocator_ops_t *pmm_allocator_bitmap()
 {
     return &bitmap_allocator;
 }

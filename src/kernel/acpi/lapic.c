@@ -81,7 +81,7 @@ uint32_t lapic_id()
     return lapic_read(LAPIC_ID) >> 24;
 }
 
-static void lapic_wait_icr(void)
+static void lapic_wait_icr()
 {
     while (lapic_read(LAPIC_ICR_LOW) & ICR_DELIVERY_STATUS)
         cpu_pause();
@@ -186,7 +186,7 @@ void lapic_timer_start(uint32_t init_count, uint8_t vector)
                 (unsigned)vector, (unsigned)init_count);
 }
 
-void lapic_timer_stop(void)
+void lapic_timer_stop()
 {
     if (g_lapic == NULL)
         lapic_halt("FATAL: lapic_timer_stop before init_lapic\n");
@@ -195,7 +195,7 @@ void lapic_timer_stop(void)
     lapic_write(LAPIC_INIT_COUNT, 0);
 }
 
-void lapic_timer_calib_start(void)
+void lapic_timer_calib_start()
 {
     if (g_lapic == NULL)
         lapic_halt("FATAL: lapic_timer_calib_start before init_lapic\n");
@@ -208,7 +208,7 @@ void lapic_timer_calib_start(void)
     lapic_write(LAPIC_INIT_COUNT, 0xFFFFFFFFu);
 }
 
-uint32_t lapic_timer_current(void)
+uint32_t lapic_timer_current()
 {
     if (g_lapic == NULL)
         lapic_halt("FATAL: lapic_timer_current before init_lapic\n");

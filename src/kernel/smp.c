@@ -27,7 +27,7 @@ typedef struct smp_bootinfo
     uint64_t entry;
 } smp_bootinfo_t;
 
-static smp_bootinfo_t *bootinfo_at_trampoline(void)
+static smp_bootinfo_t *bootinfo_at_trampoline()
 {
     size_t off = (size_t)(tramp_bootinfo - smp_trampoline_start);
     return (smp_bootinfo_t *)(uintptr_t)(SMP_TRAMPOLINE_PHYS + off);

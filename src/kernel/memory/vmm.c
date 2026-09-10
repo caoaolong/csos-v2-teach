@@ -12,7 +12,7 @@ static inline uint64_t pte_addr(uint64_t entry)
     return entry & PTE_ADDR_MASK;
 }
 
-static void flush_tlb_all(void)
+static void flush_tlb_all()
 {
     uint64_t cr3;
     __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
@@ -29,7 +29,7 @@ static void load_cr3(uint64_t pml4_phys)
     __asm__ volatile("mov %0, %%cr3" : : "r"(pml4_phys) : "memory");
 }
 
-static int map_kernel_image(void)
+static int map_kernel_image()
 {
     uint64_t phys = kernel_phys_start();
     uint64_t virt = kernel_virt_start();

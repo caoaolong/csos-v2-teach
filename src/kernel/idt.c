@@ -158,7 +158,7 @@ void handler_protection(exception_frame_t *frame)
     exception_halt(frame, "protection");
 }
 
-static uint64_t read_cr2(void)
+static uint64_t read_cr2()
 {
     uint64_t value;
     __asm__ volatile("mov %%cr2, %0" : "=r"(value));

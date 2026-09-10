@@ -64,12 +64,12 @@ int pit_ch2_oneshot_start(uint32_t duration_ms)
     return 0;
 }
 
-int pit_ch2_expired(void)
+int pit_ch2_expired()
 {
     return (inb(PORT_SPEAKER) & SPEAKER_CH2_OUT) != 0;
 }
 
-void pit_ch2_stop(void)
+void pit_ch2_stop()
 {
     outb(PORT_SPEAKER, g_port61_saved);
 }
