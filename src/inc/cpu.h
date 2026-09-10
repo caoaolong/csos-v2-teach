@@ -17,13 +17,13 @@ static inline void wrmsr(uint32_t msr, uint64_t value)
     __asm__ volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
 }
 
-static inline void cpu_pause(void)
+static inline void cpu_pause()
 {
     __asm__ volatile("pause");
 }
 
 /* 保存 RFLAGS 并 cli；用返回值做 irq_restore，避免嵌套时误 sti */
-static inline uint64_t irq_save(void)
+static inline uint64_t irq_save()
 {
     uint64_t flags;
 

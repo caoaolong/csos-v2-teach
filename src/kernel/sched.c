@@ -27,7 +27,7 @@ static task_t *g_rq_tail;
 // static task_t g_idle;
 static int g_sched_on;
 
-static void task_bootstrap(void)
+static void task_bootstrap()
 {
     void (*fn)(void);
 
@@ -40,12 +40,12 @@ static void task_bootstrap(void)
     for (;;)
         __asm__ volatile("hlt");
 }
-static unsigned cpu_index(void)
+static unsigned cpu_index()
 {
     return (unsigned)(lapic_id() & 0xFFu);
 }
 
-task_t *sched_current(void)
+task_t *sched_current()
 {
     return g_current[cpu_index()];
 }
@@ -83,7 +83,7 @@ static void ready_enqueue(task_t *t)
     t->on_ready = 1;
 }
 
-static task_t *ready_dequeue(void)
+static task_t *ready_dequeue()
 {
     task_t *t;
 
@@ -105,7 +105,7 @@ static void sleep_enqueue(task_t *t)
     g_sleep_head = t;
 }
 
-void init_sched(void)
+void init_sched()
 {
     unsigned cpu = cpu_index();
     unsigned i;

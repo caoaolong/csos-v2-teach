@@ -11,7 +11,7 @@
 #define ICW4_8086 0x01
 #define PIC_EOI 0x20
 
-void init_pic(void)
+void init_pic()
 {
     uint8_t mask1 = inb(PIC1_DATA);
     uint8_t mask2 = inb(PIC2_DATA);

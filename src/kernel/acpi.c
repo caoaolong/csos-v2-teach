@@ -63,7 +63,7 @@ typedef struct madt_lapic_addr_override
 static madt_info_t g_madt;
 static int g_madt_ready;
 
-const madt_info_t *acpi_madt(void)
+const madt_info_t *acpi_madt()
 {
     if (!g_madt_ready)
         return NULL;

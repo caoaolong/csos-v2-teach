@@ -33,7 +33,7 @@ static BOOT_SECTION void boot_memset(void *dst, int value, size_t n)
         *p++ = (uint8_t)value;
 }
 
-static BOOT_SECTION uint64_t *boot_alloc_pt(void)
+static BOOT_SECTION uint64_t *boot_alloc_pt()
 {
     if (boot_pt_used >= BOOT_PT_POOL_PAGES)
         return NULL;
@@ -103,7 +103,7 @@ static BOOT_SECTION int boot_map_page(uint64_t vaddr, uint64_t paddr, uint64_t f
     return 0;
 }
 
-static BOOT_SECTION int boot_map_identity_huge(void)
+static BOOT_SECTION int boot_map_identity_huge()
 {
     uint64_t pa;
     uint64_t pml4_phys = (uint64_t)(uintptr_t)boot_pml4;
@@ -128,7 +128,7 @@ static BOOT_SECTION int boot_map_identity_huge(void)
     return 0;
 }
 
-static BOOT_SECTION int boot_map_kernel_image(void)
+static BOOT_SECTION int boot_map_kernel_image()
 {
     /*
      * 禁止调用 kernel_layout.h 中的 inline 辅助函数：-O0 下可能生成

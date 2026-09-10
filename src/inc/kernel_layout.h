@@ -16,17 +16,17 @@ extern char __kernel_virt_start[];
 extern char __kernel_start[];
 extern char __kernel_end[];
 
-static inline uint64_t kernel_phys_start(void)
+static inline uint64_t kernel_phys_start()
 {
     return (uint64_t)(uintptr_t)__kernel_phys_start;
 }
 
-static inline uint64_t kernel_phys_end(void)
+static inline uint64_t kernel_phys_end()
 {
     return (uint64_t)(uintptr_t)__kernel_phys_end;
 }
 
-static inline uint64_t kernel_virt_start(void)
+static inline uint64_t kernel_virt_start()
 {
     return (uint64_t)(uintptr_t)__kernel_virt_start;
 }
