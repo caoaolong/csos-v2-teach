@@ -3,7 +3,9 @@
 
 #include <kernel.h>
 
-#define GDT_SIZE 0x100
+#define GDT_TSS_BASE_INDEX 6
+#define GDT_TSS_MAX_CPUS 256
+#define GDT_SIZE (GDT_TSS_BASE_INDEX + GDT_TSS_MAX_CPUS * 2)
 
 #define SEG_ATTR_G (1 << 15)
 #define SEG_ATTR_D (1 << 14)
