@@ -11,35 +11,22 @@
 /* Local APIC ID 为 8 位 */
 #define SCHED_MAX_CPUS 256
 
+typedef struct cpu_runqueue
+{
+    task_t *head;
+    task_t *tail;
+    spinlock_t lock;
+} cpu_runqueue_t;
+
 static task_t g_idle[SCHED_MAX_CPUS];
 static task_t *g_current[SCHED_MAX_CPUS];
+static cpu_runqueue_t g_rq[SCHED_MAX_CPUS];
 
-static spinlock_t g_sched_lock = SPINLOCK_INIT;
-
-static task_t *g_sleep_head;
-
-/* 全局就绪队列：仅可运行的 worker；FIFO */
-static task_t *g_rq_head;
-static task_t *g_rq_tail;
-
-// task_t *current;
-
-// static task_t g_idle;
 static int g_sched_on;
+static task_t *g_sleep_head;
+static spinlock_t g_sched_lock = SPINLOCK_INIT;
+static unsigned g_rr_create;
 
-static void task_bootstrap()
-{
-    void (*fn)(void);
-
-    fn = current->entry;
-    if (fn)
-        fn();
-
-    fput_string("[SCHED] task '%s' returned\n",
-                current->name ? current->name : "?");
-    for (;;)
-        __asm__ volatile("hlt");
-}
 static unsigned cpu_index()
 {
     return (unsigned)(lapic_id() & 0xFFu);
@@ -48,6 +35,13 @@ static unsigned cpu_index()
 task_t *sched_current()
 {
     return g_current[cpu_index()];
+}
+
+static void rq_init(unsigned cpu)
+{
+    g_rq[cpu].head = NULL;
+    g_rq[cpu].tail = NULL;
+    spin_lock_init(&g_rq[cpu].lock);
 }
 
 static void idle_init(task_t *idle)
@@ -63,40 +57,103 @@ static void idle_init(task_t *idle)
     idle->on_ready = 0;
     idle->on_cpu = 1; /* idle 始终可视为本核 current */
     idle->is_idle = 1;
+    idle->cpu = 0;
 }
 
 /*
- * 全局就绪队列 FIFO。
- * 调用方须已持有 g_sched_lock；idle 不得入队。
+ * per-CPU 就绪队列 FIFO。
+ * 调用方须已持有 g_rq[cpu].lock；idle 不得入队。
  */
-static void ready_enqueue(task_t *t)
+static void ready_enqueue_locked(unsigned cpu, task_t *t)
 {
     if (t == NULL || t->is_idle || t->on_ready)
         return;
 
+    t->cpu = (uint8_t)cpu;
     t->next = NULL;
-    if (g_rq_tail != NULL)
-        g_rq_tail->next = t;
+    if (g_rq[cpu].tail != NULL)
+        g_rq[cpu].tail->next = t;
     else
-        g_rq_head = t;
-    g_rq_tail = t;
+        g_rq[cpu].head = t;
+    g_rq[cpu].tail = t;
     t->on_ready = 1;
 }
 
-static task_t *ready_dequeue()
+static void ready_enqueue(unsigned cpu, task_t *t)
+{
+    uint64_t flags;
+
+    flags = spin_lock_irqsave(&g_rq[cpu].lock);
+    ready_enqueue_locked(cpu, t);
+    spin_unlock_irqrestore(&g_rq[cpu].lock, flags);
+}
+
+static task_t *ready_dequeue_locked(unsigned cpu)
 {
     task_t *t;
 
-    t = g_rq_head;
+    t = g_rq[cpu].head;
     if (t == NULL)
         return NULL;
 
-    g_rq_head = t->next;
-    if (g_rq_head == NULL)
-        g_rq_tail = NULL;
+    g_rq[cpu].head = t->next;
+    if (g_rq[cpu].head == NULL)
+        g_rq[cpu].tail = NULL;
     t->next = NULL;
     t->on_ready = 0;
     return t;
+}
+
+static task_t *ready_dequeue_local(unsigned cpu)
+{
+    task_t *t;
+    uint64_t flags;
+
+    flags = spin_lock_irqsave(&g_rq[cpu].lock);
+    t = ready_dequeue_locked(cpu);
+    spin_unlock_irqrestore(&g_rq[cpu].lock, flags);
+    return t;
+}
+
+/*
+ * 本核本地队列为空时，从其他已上线 CPU 的队列头部窃取一个任务。
+ */
+static task_t *rq_steal_one(unsigned thief)
+{
+    unsigned i;
+
+    for (i = 1; i < SCHED_MAX_CPUS; i++)
+    {
+        unsigned victim = (thief + i) % SCHED_MAX_CPUS;
+        task_t *t;
+        uint64_t flags;
+
+        if (g_current[victim] == NULL)
+            continue;
+
+        flags = spin_lock_irqsave(&g_rq[victim].lock);
+        t = ready_dequeue_locked(victim);
+        spin_unlock_irqrestore(&g_rq[victim].lock, flags);
+        if (t != NULL)
+            return t;
+    }
+    return NULL;
+}
+
+static unsigned pick_create_cpu()
+{
+    unsigned start;
+    unsigned i;
+
+    start = __sync_fetch_and_add(&g_rr_create, 1);
+    for (i = 0; i < SCHED_MAX_CPUS; i++)
+    {
+        unsigned cpu = (start + i) % SCHED_MAX_CPUS;
+
+        if (g_current[cpu] != NULL)
+            return cpu;
+    }
+    return cpu_index();
 }
 
 static void sleep_enqueue(task_t *t)
@@ -105,24 +162,48 @@ static void sleep_enqueue(task_t *t)
     g_sleep_head = t;
 }
 
+static void task_bootstrap()
+{
+    void (*fn)(void);
+
+    fn = current->entry;
+    if (fn)
+        fn();
+
+    fput_string("[SCHED] task '%s' returned\n",
+                current->name ? current->name : "?");
+    for (;;)
+        __asm__ volatile("hlt");
+}
+
 void init_sched()
 {
     unsigned cpu = cpu_index();
     unsigned i;
 
     for (i = 0; i < SCHED_MAX_CPUS; i++)
+    {
         g_current[i] = NULL;
+        rq_init(i);
+    }
 
-    g_rq_head = NULL;
-    g_rq_tail = NULL;
     g_sleep_head = NULL;
+    g_rr_create = 0;
 
     idle_init(&g_idle[cpu]);
     g_current[cpu] = &g_idle[cpu];
     g_sched_on = 1;
     spin_lock_init(&g_sched_lock);
 
-    put_string("[SCHED] idle ready (SMP)\n");
+    put_string("[SCHED] per-CPU runqueue ready\n");
+}
+
+void sched_cpu_init()
+{
+    unsigned cpu = cpu_index();
+
+    idle_init(&g_idle[cpu]);
+    g_current[cpu] = &g_idle[cpu];
 }
 
 task_t *task_create(void (*entry)(void), const char *name)
@@ -131,6 +212,7 @@ task_t *task_create(void (*entry)(void), const char *name)
     uint8_t *stack;
     uintptr_t top;
     exception_frame_t *f;
+    unsigned target;
 
     if (!g_sched_on || entry == NULL)
         return NULL;
@@ -171,12 +253,12 @@ task_t *task_create(void (*entry)(void), const char *name)
 
     t->rsp = (uint64_t)(uintptr_t)f;
 
-    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
-    ready_enqueue(t);
-    spin_unlock_irqrestore(&g_sched_lock, flags);
+    target = pick_create_cpu();
+    ready_enqueue(target, t);
 
-    fput_string("[SCHED] create '%s' stack=0x%x frame=0x%x\n",
-                t->name, (unsigned)(uintptr_t)stack, (unsigned)(uintptr_t)f);
+    fput_string("[SCHED] create '%s' cpu=%u stack=0x%x frame=0x%x\n",
+                t->name, (unsigned)target,
+                (unsigned)(uintptr_t)stack, (unsigned)(uintptr_t)f);
     return t;
 }
 
@@ -196,9 +278,9 @@ void sched_wake_sleepers()
             *pp = t->sleep_next;
             t->sleep_next = NULL;
             t->state = TASK_READY;
-            /* 新增：仍在原核 current 上时只改状态，由该核 schedule 时再入队 */
+            /* 仍在原核 current 上时只改状态，由该核 schedule 时再入队 */
             if (!t->on_cpu)
-                ready_enqueue(t);
+                ready_enqueue((unsigned)t->cpu, t);
         }
         else
         {
@@ -236,7 +318,7 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
     unsigned cpu;
     task_t *cur;
     task_t *next;
-    uint64_t flags;
+    uint64_t irqf;
     uint64_t next_rsp;
 
     if (!g_sched_on || frame == NULL)
@@ -247,26 +329,32 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
     if (cur == NULL)
         return (uint64_t)(uintptr_t)frame;
 
-    flags = spin_lock_irqsave(&g_sched_lock);
+    irqf = irq_save();
     cur->rsp = (uint64_t)(uintptr_t)frame;
 
-    /* 离开本核：worker 仍 READY 则交回全局队列；idle / SLEEPING 不入队 */
+    /* 离开本核：worker 仍 READY 则交回本核队列；idle / SLEEPING 不入队 */
     if (!cur->is_idle)
     {
         cur->on_cpu = 0;
         if (cur->state == TASK_READY)
-            ready_enqueue(cur);
+            ready_enqueue(cpu, cur);
     }
 
-    next = ready_dequeue();
+    next = ready_dequeue_local(cpu);
+    if (next == NULL)
+        next = rq_steal_one(cpu);
+
     if (next == NULL)
         next = &g_idle[cpu];
     else
+    {
         next->on_cpu = 1;
+        next->cpu = (uint8_t)cpu;
+    }
 
     g_current[cpu] = next;
     next_rsp = next->rsp;
-    spin_unlock_irqrestore(&g_sched_lock, flags);
+    irq_restore(irqf);
     return next_rsp;
 }
 
@@ -278,12 +366,4 @@ void yield()
 void handler_yield(exception_frame_t *frame)
 {
     (void)frame;
-}
-
-void sched_cpu_init()
-{
-    unsigned cpu = cpu_index();
-
-    idle_init(&g_idle[cpu]);
-    g_current[cpu] = &g_idle[cpu];
 }
