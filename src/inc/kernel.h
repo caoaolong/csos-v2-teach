@@ -7,6 +7,10 @@
 
 #define KERNEL_CODE_SEG (1 * 8)
 #define KERNEL_DATA_SEG (2 * 8)
+/* ring3 选择子带 RPL=3 */
+#define USER_CODE_SEG ((3 * 8) | 3)
+#define USER_DATA_SEG ((4 * 8) | 3)
+#define TSS_SEG (5 * 8)
 
 static inline uint8_t inb(uint16_t port)
 {
