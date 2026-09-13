@@ -16,17 +16,17 @@ typedef enum task_state
 typedef struct task
 {
     uint64_t rsp;            /* 指向栈上 exception_frame_t */
-    struct task *next;       /* 全局就绪队列（仅 READY 且未运行） */
+    struct task *next;       /* per-CPU 就绪队列（仅 READY 且未运行） */
     struct task *sleep_next; /* 睡眠链表 */
     void (*entry)(void);     /* 入口（仅新建时使用） */
     const char *name;
     void *stack_page; /* alloc_page；idle 为 NULL */
     task_state_t state;
     uint64_t wake_jiffies; /* state==SLEEPING 时的唤醒时刻 */
-    // 新增
-    uint8_t on_ready; /* 是否挂在全局就绪队列上 */
-    uint8_t on_cpu;   /* 是否正被某核执行（未 schedule 离开） */
-    uint8_t is_idle;  /* per-CPU idle，不进全局就绪队列 */
+    uint8_t on_ready;      /* 是否挂在 per-CPU 就绪队列上 */
+    uint8_t on_cpu;        /* 是否正被某核执行（未 schedule 离开） */
+    uint8_t is_idle;       /* per-CPU idle，不进就绪队列 */
+    uint8_t cpu;           /* 所属就绪队列的 apic_id（最后运行核） */
 } task_t;
 
 /* 当前 CPU 正在运行的任务（per-CPU） */
