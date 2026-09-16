@@ -4,15 +4,16 @@ OBJCOPY = x86_64-elf-objcopy
 
 SRC_DIR    = src
 KERNEL_DIR = $(SRC_DIR)/kernel
+USER_DIR   = $(SRC_DIR)/user
 INC_DIR    = $(SRC_DIR)/inc
 BUILD_DIR  = build
 
-# 上游 edk2 仓库（相对本项目）
-EDK2_SRC   = ../edk2
-# 本项目内同步下来的 edk2 内容
-EDK2_DIR   = edk2
-
 KERNEL     = $(BUILD_DIR)/kernel.elf
+
+USER_ELF   = $(BUILD_DIR)/user.elf
+USER_BLOB  = $(BUILD_DIR)/libuser.o
+USER_SRCS_S = $(wildcard $(USER_DIR)/*.S)
+USER_OBJS   = $(patsubst $(SRC_DIR)/%.S,$(BUILD_DIR)/%.o,$(USER_SRCS_S))
 
 CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -MMD -MP
 
@@ -23,7 +24,7 @@ KERNEL_SRCS_S = $(wildcard $(KERNEL_DIR)/*.S) \
 KERNEL_OBJS   = $(patsubst $(SRC_DIR)/%.S,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_S)) \
                 $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_C))
 
-all: $(KERNEL)
+all: $(KERNEL) $(USER_ELF)
 
 # 编译C语言和汇编代码
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
@@ -33,6 +34,22 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/user/%.o: $(USER_DIR)/%.S
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(USER_ELF): $(USER_OBJS)
+	mkdir -p $(dir $@)
+	$(LD) -m elf_x86_64 -e user_demo_start -Ttext=0x40000000 -o $@ $(USER_OBJS)
+
+$(USER_BLOB): $(USER_OBJS)
+	mkdir -p $(dir $@)
+	$(OBJCOPY) --only-section=.text \
+		--rename-section .text=.rodata.user_blob,alloc,load,readonly,data,contents \
+		$(USER_OBJS) $@
+
+KERNEL_OBJS += $(USER_BLOB)
 
 $(KERNEL): $(KERNEL_OBJS) $(SRC_DIR)/linker.ld
 	mkdir -p $(dir $@)

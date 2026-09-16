@@ -19,6 +19,7 @@
 #include <timer.h>
 #include <sched.h>
 #include <smp.h>
+#include <user.h>
 
 static void thread_a()
 {
@@ -62,6 +63,8 @@ void kernel_main(boot_info_t *boot_info)
     __asm__ volatile("sti");
 
     fb_draw_logo_splash(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
+
+    user_enter_demo();
 
     for (;;)
     {
