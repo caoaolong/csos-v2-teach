@@ -151,6 +151,13 @@ int map_page(uint64_t vaddr, uint64_t paddr, uint64_t flags)
     if (pt == NULL)
         return -1;
 
+    if (flags & PTE_USER)
+    {
+        kernel_pml4[i4] |= PTE_USER;
+        pdpt[i3] |= PTE_USER;
+        pd[i2] |= PTE_USER;
+    }
+    
     pt[i1] = (paddr & PTE_ADDR_MASK) | flags;
     invlpg(vaddr);
     return 0;

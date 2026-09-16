@@ -8,6 +8,7 @@
 #include <memory/vmm.h>
 #include <gdt.h>
 #include <idt.h>
+#include <sched.h>
 
 #define ACPI_LAPIC_ENABLED (1u << 0)
 #define SMP_TRAMPOLINE_PHYS 0x8000ULL
