@@ -5,8 +5,8 @@
 #include <string.h>
 #include <tss.h>
 
-extern char user_demo_start[];
-extern char user_demo_end[];
+extern char _binary_user_bin_start[];
+extern char _binary_user_bin_end[];
 extern void enter_user(uint64_t rip, uint64_t rsp);
 
 static void *g_kernel_stack_page;
@@ -25,7 +25,7 @@ void user_enter_demo()
     uint64_t demo_size;
     uint64_t kstack_top;
 
-    demo_size = (uint64_t)(user_demo_end - user_demo_start);
+    demo_size = (uint64_t)(_binary_user_bin_end - _binary_user_bin_start);
     if (demo_size == 0 || demo_size > PAGE_SIZE)
         user_halt("FATAL: user demo size invalid\n");
 
@@ -38,7 +38,7 @@ void user_enter_demo()
     kernel_memset(code_page, 0, (uint32_t)PAGE_SIZE);
     kernel_memset(stack_page, 0, (uint32_t)PAGE_SIZE);
     kernel_memset(g_kernel_stack_page, 0, (uint32_t)PAGE_SIZE);
-    kernel_memcpy(code_page, user_demo_start, (uint32_t)demo_size);
+    kernel_memcpy(code_page, _binary_user_bin_start, (uint32_t)demo_size);
 
     if (map_page(USER_CODE_VADDR, (uint64_t)(uintptr_t)code_page,
                  PTE_PRESENT | PTE_USER) != 0)
