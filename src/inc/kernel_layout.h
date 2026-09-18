@@ -1,5 +1,5 @@
-#ifndef CSOS_KERNEL_LAYOUT_H
-#define CSOS_KERNEL_LAYOUT_H
+#ifndef CSOS_LAYOUT_H
+#define CSOS_LAYOUT_H
 
 #include <stdint.h>
 
@@ -7,7 +7,7 @@
 #define KERNEL_VIRT_BASE 0xFFFFFFFF80000000ULL
 #define KERNEL_PHYS_BASE 0x100000ULL
 
-/* 由 linker.ld 提供 */
+/* 由 kernel.ld 提供 */
 extern char __bootstrap_start[];
 extern char __bootstrap_end[];
 extern char __kernel_phys_start[];
@@ -37,4 +37,4 @@ static inline void *phys_to_virt(uint64_t phys)
     return (void *)(uintptr_t)phys;
 }
 
-#endif /* CSOS_KERNEL_LAYOUT_H */
+#endif /* CSOS_LAYOUT_H */
