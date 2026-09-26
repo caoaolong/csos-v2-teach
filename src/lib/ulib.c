@@ -29,3 +29,22 @@ void *memset(void *s, int c, unsigned long n)
         p[i] = (char)c;
     return s;
 }
+
+/* 系统调用桩：RAX=调用号，RDI=参数，int 0x80 陷入内核 */
+static long syscall1(long num, long arg)
+{
+    long ret;
+
+    __asm__ volatile(
+        "int $0x80\n\t"
+        : "=a"(ret)
+        : "a"(num), "D"(arg)
+        : "memory");
+    return ret;
+}
+
+/* 睡眠 ms 毫秒（由内核定时器唤醒） */
+void sleep(unsigned long ms)
+{
+    syscall1(SYS_SLEEP, (long)ms);
+}

@@ -80,6 +80,11 @@ void init_idt()
     install_interrupt_handler(34, interrupt_handler_yield);
     install_interrupt_handler(255, interrupt_handler_spurious);
 
+    /* int 0x80：用户态可触发的系统调用门（DPL3） */
+    set_interrupt_gate(128, (uint64_t)(uintptr_t)interrupt_handler_syscall,
+                       KERNEL_CODE_SEG,
+                       GATE_ATTR_P | GATE_ATTR_DPL3 | GATE_TYPE_SYSCALL);
+
     load_idt();
 }
 

@@ -15,8 +15,8 @@ enter_user:
     pushq $USER_DS
     /* RSP: 用户栈顶,对应 enter_user(rip[rdi]，rsp[rsi]) */
     pushq %rsi
-    /* RFLAGS: 仅 bit1置1(保留位恒1)，IF=0即关中断进用户态 */
-    pushq $0x2
+    /* RFLAGS: bit1保留位恒1，IF=1开中断（否则定时器不走、sleep 永不唤醒） */
+    pushq $0x202
     /* CS: 用户代码段,0x1B = GDT[3] + RPL=3 */
     pushq $USER_CS
     /* RIP: 用户入口地址 */
