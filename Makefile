@@ -21,7 +21,7 @@ USER_ELF   = $(BUILD_DIR)/user.elf
 USER_BIN   = $(BUILD_DIR)/user.bin
 
 CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -MMD -MP
-UFLAGS = -ffreestanding -mno-red-zone -fno-builtin -fno-asynchronous-unwind-tables -g -O0 -I$(USER_DIR) -I$(LIB_DIR) -MMD -MP
+UFLAGS = -ffreestanding -mno-red-zone -fno-builtin -fno-asynchronous-unwind-tables -g -O0 -I$(INC_DIR) -I$(USER_DIR) -I$(LIB_DIR) -MMD -MP
 
 KERNEL_SRCS_C = $(wildcard $(KERNEL_DIR)/*.c) \
                 $(wildcard $(KERNEL_DIR)/*/*.c)
@@ -114,7 +114,7 @@ master: $(KERNEL)
 qemu: master
 	qemu-system-x86_64 \
 		-s -S -m 512M \
-		-smp 4 \
+		-smp 1 \
 		-bios OVMF.fd \
 		-drive format=raw,file=fat:rw:qemu/hda-contents \
 		-net none \

@@ -9,6 +9,7 @@
 
 #define SYS_WRITE 1
 #define SYS_EXIT 2
+#define SYS_SLEEP 3 /* int 0x80: rdi = 睡眠毫秒数 */
 
 /* 映射用户页、设置 TSS.RSP0，iretq 进入 ring3（不返回） */
 void user_enter_demo();

@@ -21,22 +21,12 @@
 #include <smp.h>
 #include <user.h>
 
-static void thread_a()
+static void user_task()
 {
+    user_enter_demo();
+    /* user_enter_demo 不返回；防御性兜底 */
     for (;;)
-    {
-        fput_string("A(cpu=%u)", (unsigned)lapic_id());
-        msleep(100);
-    }
-}
-
-static void thread_b()
-{
-    for (;;)
-    {
-        fput_string("B(cpu=%u)", (unsigned)lapic_id());
-        msleep(100);
-    }
+        __asm__ volatile("hlt");
 }
 
 void kernel_main(boot_info_t *boot_info)
@@ -57,17 +47,10 @@ void kernel_main(boot_info_t *boot_info)
     init_sched();
     init_smp();
 
-    if (task_create(thread_a, "A") == NULL || task_create(thread_b, "B") == NULL)
-        put_string("FATAL: task_create failed\n");
+    if (task_create(user_task, "user") == NULL)
+        put_string("FATAL: user task_create failed\n");
 
     __asm__ volatile("sti");
 
     fb_draw_logo_splash(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
-
-    user_enter_demo();
-
-    for (;;)
-    {
-        __asm__ volatile("hlt");
-    }
 }
