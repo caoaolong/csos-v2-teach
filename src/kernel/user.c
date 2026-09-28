@@ -3,6 +3,7 @@
 #include <memory/vmm.h>
 #include <serial.h>
 #include <string.h>
+#include <syscall.h>
 #include <tss.h>
 
 extern char _binary_user_bin_start[];
@@ -10,6 +11,9 @@ extern char _binary_user_bin_end[];
 extern void enter_user(uint64_t rip, uint64_t rsp);
 
 static void *g_kernel_stack_page;
+
+uint64_t syscall_kstack_top;
+uint64_t syscall_user_rsp;
 
 static void user_halt(const char *msg)
 {
@@ -49,6 +53,7 @@ void user_enter_demo()
         user_halt("FATAL: map user stack failed\n");
 
     kstack_top = (uint64_t)(uintptr_t)g_kernel_stack_page + PAGE_SIZE;
+    syscall_kstack_top = kstack_top; /* 供 syscall_entry 切栈 */
     tss_set_rsp0(kstack_top);
 
     fput_string("[USER] enter rip=0x%llx rsp=0x%llx rsp0=0x%llx demo=%u\n",

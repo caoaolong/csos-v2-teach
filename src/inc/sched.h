@@ -26,6 +26,7 @@ typedef struct task
     uint8_t on_ready;      /* 是否挂在 per-CPU 就绪队列上 */
     uint8_t on_cpu;        /* 是否正被某核执行（未 schedule 离开） */
     uint8_t is_idle;       /* per-CPU idle，不进就绪队列 */
+    uint8_t pinned;        /* 绑定 CPU：不允许被其他核窃取（用户任务用） */
     uint8_t cpu;           /* 所属就绪队列的 apic_id（最后运行核） */
 } task_t;
 
@@ -37,30 +38,22 @@ void sched_cpu_init();
 
 extern task_t *current;
 
-/* 将当前引导栈登记为 idle，之后可 create / sti */
 void init_sched();
 
 void sched_cpu_init();
 
-/* 新建内核线程并链入就绪环；失败返回 NULL */
 task_t *task_create(void (*entry)(void), const char *name);
 
-/* timer：jiffies++ 后调用，把到期任务挂回就绪环 */
+task_t *task_create_pinned(void (*entry)(void), const char *name);
+
 void sched_wake_sleepers(void);
 
-/* 阻塞睡眠至少 jf 个 jiffy（0 立即返回）；可被抢占路径摘环 */
 void sched_sleep_jiffies(uint64_t jf);
 
-/*
- * 中断路径调度：保存 frame 到 current，切到 next，返回新 rsp。
- * 若调度未启用或仅一任务，返回原 frame。
- */
 uint64_t schedule_from_irq(exception_frame_t *frame);
 
-/* 协作让出（int SCHED_YIELD_VECTOR） */
 void yield();
 
-/* yield 向量：仅调度；返回值由 interrupt.S 经 schedule_from_irq 取得 */
 void handler_yield(exception_frame_t *frame);
 
 #endif /* CSOS_SCHED_H */

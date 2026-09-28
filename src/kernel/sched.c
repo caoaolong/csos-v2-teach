@@ -57,6 +57,7 @@ static void idle_init(task_t *idle)
     idle->on_ready = 0;
     idle->on_cpu = 1; /* idle 始终可视为本核 current */
     idle->is_idle = 1;
+    idle->pinned = 0;
     idle->cpu = 0;
 }
 
@@ -132,6 +133,11 @@ static task_t *rq_steal_one(unsigned thief)
             continue;
 
         flags = spin_lock_irqsave(&g_rq[victim].lock);
+        if (g_rq[victim].head != NULL && g_rq[victim].head->pinned)
+        {
+            spin_unlock_irqrestore(&g_rq[victim].lock, flags);
+            continue;
+        }
         t = ready_dequeue_locked(victim);
         spin_unlock_irqrestore(&g_rq[victim].lock, flags);
         if (t != NULL)
@@ -206,7 +212,7 @@ void sched_cpu_init()
     g_current[cpu] = &g_idle[cpu];
 }
 
-task_t *task_create(void (*entry)(void), const char *name)
+task_t *task_create_ex(void (*entry)(void), const char *name, int pinned)
 {
     task_t *t;
     uint8_t *stack;
@@ -244,6 +250,7 @@ task_t *task_create(void (*entry)(void), const char *name)
     t->on_ready = 0;
     t->on_cpu = 0;
     t->is_idle = 0;
+    t->pinned = pinned ? 1 : 0;
 
     f->rip = (uint64_t)(uintptr_t)task_bootstrap;
     f->cs = KERNEL_CODE_SEG;
@@ -253,13 +260,21 @@ task_t *task_create(void (*entry)(void), const char *name)
 
     t->rsp = (uint64_t)(uintptr_t)f;
 
-    target = pick_create_cpu();
+    target = t->pinned ? cpu_index() : pick_create_cpu();
+    t->cpu = (uint8_t)target;
     ready_enqueue(target, t);
 
-    fput_string("[SCHED] create '%s' cpu=%u stack=0x%x frame=0x%x\n",
-                t->name, (unsigned)target,
-                (unsigned)(uintptr_t)stack, (unsigned)(uintptr_t)f);
     return t;
+}
+
+task_t *task_create(void (*entry)(void), const char *name)
+{
+    return task_create_ex(entry, name, 0);
+}
+
+task_t *task_create_pinned(void (*entry)(void), const char *name)
+{
+    return task_create_ex(entry, name, 1);
 }
 
 void sched_wake_sleepers()

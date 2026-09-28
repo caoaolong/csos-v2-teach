@@ -30,16 +30,15 @@ void *memset(void *s, int c, unsigned long n)
     return s;
 }
 
-/* 系统调用桩：RAX=调用号，RDI=参数，int 0x80 陷入内核 */
 static long syscall1(long num, long arg)
 {
     long ret;
 
     __asm__ volatile(
-        "int $0x80\n\t"
+        "syscall"
         : "=a"(ret)
         : "a"(num), "D"(arg)
-        : "memory");
+        : "rcx", "r11", "memory");
     return ret;
 }
 

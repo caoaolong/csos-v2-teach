@@ -9,6 +9,7 @@
 #include <gdt.h>
 #include <idt.h>
 #include <sched.h>
+#include <syscall.h>
 
 #define ACPI_LAPIC_ENABLED (1u << 0)
 #define SMP_TRAMPOLINE_PHYS 0x8000ULL
@@ -128,6 +129,7 @@ void ap_main()
 {
     gdt_reload();
     idt_reload();
+    init_syscall();
     lapic_ap_init();
     sched_cpu_init();
     apic_timer_start_calibrated();
