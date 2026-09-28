@@ -99,15 +99,21 @@ void init_gdt()
                   SEG_ATTR_P | SEG_ATTR_DPL0 | SEG_NORMAL | SEG_TYPE_DATA | SEG_TYPE_RW |
                       SEG_ATTR_G);
 
-    /* 0x18: 用户代码段（选择子 USER_CODE_SEG=0x1B） */
-    set_gdt_entry(3 * 8, 0, 0xFFFFFFFF,
+    /* 0x18: 32 位兼容用户代码段（选择子 USER32_CS_SEG=0x1B，仅作 STAR 基址；
+     * sysret64 取 CS=该值+16、SS=该值+8） */
+    set_gdt_entry(USER32_CS_SEG, 0, 0xFFFFFFFF,
                   SEG_ATTR_P | SEG_ATTR_DPL3 | SEG_NORMAL | SEG_TYPE_CODE | SEG_TYPE_RW |
-                      SEG_ATTR_L | SEG_ATTR_G);
+                      SEG_ATTR_D | SEG_ATTR_G);
 
     /* 0x20: 用户数据段（选择子 USER_DATA_SEG=0x23） */
-    set_gdt_entry(4 * 8, 0, 0xFFFFFFFF,
+    set_gdt_entry(USER_DATA_SEG, 0, 0xFFFFFFFF,
                   SEG_ATTR_P | SEG_ATTR_DPL3 | SEG_NORMAL | SEG_TYPE_DATA | SEG_TYPE_RW |
                       SEG_ATTR_G);
+
+    /* 0x28: 64 位用户代码段（选择子 USER_CODE_SEG=0x2B，L=1） */
+    set_gdt_entry(USER_CODE_SEG, 0, 0xFFFFFFFF,
+                  SEG_ATTR_P | SEG_ATTR_DPL3 | SEG_NORMAL | SEG_TYPE_CODE | SEG_TYPE_RW |
+                      SEG_ATTR_L | SEG_ATTR_G);
 
     kernel_memset(&g_tss, 0, sizeof(g_tss));
     g_tss.iomap_base = sizeof(g_tss);

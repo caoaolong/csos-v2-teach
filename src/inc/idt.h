@@ -90,8 +90,6 @@ void handler_machine(exception_frame_t *frame);
 void handler_simd(exception_frame_t *frame);
 void handler_virtual(exception_frame_t *frame);
 void handler_control(exception_frame_t *frame);
-// 系统调用
-void handler_syscall(exception_frame_t *frame);
 void handler_spurious(exception_frame_t *frame);
 
 /* 汇编入口 */
@@ -119,7 +117,6 @@ extern void interrupt_handler_control(void);
 extern void interrupt_handler_timer(void);
 extern void interrupt_handler_kbd(void);
 extern void interrupt_handler_yield(void);
-extern void interrupt_handler_syscall(void);
 extern void interrupt_handler_spurious(void);
 
 #endif /* CSOS_IDT_H */

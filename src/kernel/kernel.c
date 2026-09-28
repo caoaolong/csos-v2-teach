@@ -20,6 +20,7 @@
 #include <sched.h>
 #include <smp.h>
 #include <user.h>
+#include <syscall.h>
 
 static void user_task()
 {
@@ -34,6 +35,7 @@ void kernel_main(boot_info_t *boot_info)
     serial_init();
     init_gdt();
     init_idt();
+    init_syscall();
 
     init_pmm(boot_info);
     init_vmm(boot_info);
@@ -47,7 +49,7 @@ void kernel_main(boot_info_t *boot_info)
     init_sched();
     init_smp();
 
-    if (task_create(user_task, "user") == NULL)
+    if (task_create_pinned(user_task, "user") == NULL)
         put_string("FATAL: user task_create failed\n");
 
     __asm__ volatile("sti");
