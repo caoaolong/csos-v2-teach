@@ -33,7 +33,7 @@ static inline void outb(uint16_t port, uint8_t data)
 
 static inline void outw(uint16_t port, uint16_t data)
 {
-    __asm__ volatile("outb %[v], %[p]" : : [p] "d"(port), [v] "a"(data));
+    __asm__ volatile("outw %[v], %[p]" : : [p] "d"(port), [v] "a"(data));
 }
 
 int vsprintf(char *buf, const char *fmt, va_list args);

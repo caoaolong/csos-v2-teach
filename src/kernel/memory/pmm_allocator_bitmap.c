@@ -125,7 +125,7 @@ static uint64_t bitmap_free_pages()
     return free_pages;
 }
 
-static const pmm_allocator_ops_t bitmap_allocator = {
+const pmm_allocator_ops_t pmm_allocator_bitmap_ops = {
     .name = "bitmap",
     .init = bitmap_allocator_init,
     .mark_used = bitmap_mark_used,
@@ -135,8 +135,3 @@ static const pmm_allocator_ops_t bitmap_allocator = {
     .total_pages = bitmap_total_pages,
     .free_pages = bitmap_free_pages,
 };
-
-const pmm_allocator_ops_t *pmm_allocator_bitmap()
-{
-    return &bitmap_allocator;
-}
