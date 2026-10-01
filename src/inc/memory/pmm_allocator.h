@@ -33,7 +33,4 @@ const pmm_allocator_ops_t *pmm_allocator_current(void);
 /* 切换分配器（测试或替换实现时使用，须在 init_pmm 之前调用） */
 void pmm_allocator_set(const pmm_allocator_ops_t *ops);
 
-/* 内置：bitmap 分配器 */
-const pmm_allocator_ops_t *pmm_allocator_bitmap(void);
-
 #endif /* CSOS_MEMORY_PMM_ALLOCATOR_H */

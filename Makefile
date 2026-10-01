@@ -117,6 +117,7 @@ qemu: master
 		-smp 1 \
 		-bios OVMF.fd \
 		-drive format=raw,file=fat:rw:qemu/hda-contents \
+		-drive format=raw,file=qemu/master.img,if=ide,index=2,media=disk \
 		-net none \
 		-serial stdio \
 		-debugcon file:debug.log \
