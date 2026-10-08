@@ -22,46 +22,44 @@
 #include <user.h>
 #include <syscall.h>
 #include <ata/ata.h>
+#include <fs/vfs.h>
+#include <fs/ramfs.h>
 #include <string.h>
 
-static void ata_run_test()
+static void vfs_test()
 {
-    static uint8_t wbuf[512];
-    static uint8_t rbuf[512];
-    static const char msg[] = "Hello,World!";
-    const ata_ops_t *ops = ata_current();
-    int rc = ops->init();
-
-    if (rc == 0)
+    vfs_file_t *f = NULL;
+    static const char msg[] = "Hello,VFS!";
+    char rbuf[32];
+    int64_t n;
+    if (vfs_register_driver(&ramfs_driver) != VFS_OK)
     {
-        uint8_t drive = 2;
-        uint64_t cap = ops->drive_sectors(drive);
-
-        fput_string("[ATA] ops=%s drive=%d capacity=%llu sectors (%llu MB)\n",
-                    ops->name, drive,
-                    cap, cap / 2048);
-        kernel_memset(wbuf, 0, (uint32_t)sizeof(wbuf));
-        kernel_memcpy(wbuf, (void *)msg, (uint32_t)(sizeof(msg) - 1));
-
-        rc = ops->write_sectors(drive, 0, 1, wbuf);
-        if (rc != 0)
-        {
-            fput_string("[ATA] LBA0 write failed rc=%d\n", rc);
-        }
-        else if (ops->read_sectors(drive, 0, 1, rbuf) != 0)
-        {
-            put_string("[ATA] LBA0 read failed\n");
-        }
-        else
-        {
-            /* wbuf 已清零，读回串以 NUL 结尾，可直接 %s 打印 */
-            fput_string("[ATA] LBA0 read: %s\n", (char *)rbuf);
-        }
+        put_string("[VFS-TEST] register failed\n");
+        return;
     }
-    else
+    if (vfs_mount("ramfs", "/ram", "mem0") != VFS_OK)
     {
-        fput_string("[ATA] no disk (rc=%d), continue diskless boot\n", rc);
+        put_string("[VFS-TEST] mount failed\n");
+        return;
     }
+    if (vfs_open("/ram/a.txt", VFS_O_RDWR | VFS_O_CREAT | VFS_O_TRUNC, &f) != VFS_OK)
+    {
+        put_string("[VFS-TEST] open for write failed\n");
+        return;
+    }
+    vfs_write(f, msg, sizeof(msg) - 1);
+    vfs_close(f);
+
+    if (vfs_open("/ram/a.txt", VFS_O_RDONLY, &f) != VFS_OK)
+    {
+        put_string("[VFS-TEST] reopen failed\n");
+        return;
+    }
+    kernel_memset(rbuf, 0, (uint32_t)sizeof(rbuf));
+    n = vfs_read(f, rbuf, sizeof(rbuf) - 1);
+    vfs_close(f);
+    fput_string("[VFS-TEST] read n=%lld data='%s' %s\n",
+                n, rbuf, kernel_strcmp(rbuf, msg) == 0 ? "OK" : "MISMATCH");
 }
 
 static void user_task()
@@ -91,7 +89,11 @@ void kernel_main(boot_info_t *boot_info)
     init_sched();
     init_smp();
 
-    ata_run_test();
+    if (!ata_current()->init())
+        put_string("FATAL: ata initialze failed\n");
+
+    init_vfs();
+    vfs_test();
 
     if (task_create_pinned(user_task, "user") == NULL)
         put_string("FATAL: user task_create failed\n");
