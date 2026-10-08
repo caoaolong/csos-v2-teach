@@ -9,6 +9,8 @@ void kernel_strncpy(char *dst, const char *src, uint32_t size);
 
 int kernel_strncmp(const char *str1, const char *str2, uint32_t size);
 
+int kernel_strcmp(const char *str1, const char *str2);
+
 uint32_t kernel_strlen(const char *str);
 
 void kernel_memcpy(void *dst, void *src, uint32_t size);
