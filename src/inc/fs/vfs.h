@@ -16,6 +16,8 @@
 #define VFS_ERR_NOSPC -10
 #define VFS_ERR_NOTSUP -11
 #define VFS_ERR_BUSY -12
+#define VFS_ERR_NOTEMPTY -13
+#define VFS_ERR_RANGE -14
 
 /* ---- open flags（兼容 POSIX 常用子集） ---- */
 #define VFS_O_RDONLY 0x00
@@ -24,6 +26,7 @@
 #define VFS_O_CREAT 0x40
 #define VFS_O_TRUNC 0x200
 #define VFS_O_APPEND 0x400
+#define VFS_O_DIRECTORY 0x1000
 
 /* ---- seek whence ---- */
 #define VFS_SEEK_SET 0
@@ -37,6 +40,14 @@
 
 typedef struct vfs_mount vfs_mount_t;
 typedef struct vfs_file vfs_file_t;
+typedef struct vfs_dir vfs_dir_t;
+
+typedef struct vfs_dirent
+{
+    char name[VFS_NAME_MAX];
+    uint32_t is_dir;
+    uint64_t size;
+} vfs_dirent_t;
 
 /*
  * Strategy 接口
@@ -52,6 +63,11 @@ typedef struct fs_driver
     int64_t (*write)(vfs_file_t *f, const void *buf, uint64_t len);
     int64_t (*seek)(vfs_file_t *f, int64_t off, int whence);
     int (*stat)(vfs_mount_t *m, const char *rel, uint64_t *size_out, uint32_t *is_dir_out);
+    int (*mkdir)(vfs_mount_t *m, const char *rel);
+    int (*rmdir)(vfs_mount_t *m, const char *rel);
+    int (*opendir)(vfs_mount_t *m, const char *rel, vfs_dir_t *d);
+    int (*readdir)(vfs_dir_t *d, vfs_dirent_t *out);
+    int (*closedir)(vfs_dir_t *d);
 } fs_driver_t;
 
 /* Facade 句柄 */
@@ -66,10 +82,20 @@ struct vfs_file
     void *priv;    /* 各 FS 的 inode/簇号等，vfs.c 不解释 */
 };
 
+/* 目录句柄 */
+struct vfs_dir
+{
+    vfs_mount_t *mnt;
+    const fs_driver_t *drv;
+    void *priv;
+    void *pos;
+};
+
 /* 挂载点 */
 struct vfs_mount
 {
     int used;
+    uint32_t open_count; /* 未关闭的文件/目录句柄数，>0 时禁止 unmount */
     char mountpoint[VFS_PATH_MAX];
     const fs_driver_t *drv;
     void *priv; /* 各 FS 的 superblock，vfs.c 不解释 */
@@ -88,5 +114,14 @@ int64_t vfs_read(vfs_file_t *f, void *buf, uint64_t len);
 int64_t vfs_write(vfs_file_t *f, const void *buf, uint64_t len);
 int64_t vfs_seek(vfs_file_t *f, int64_t off, int whence);
 int vfs_stat(const char *path, uint64_t *size_out, uint32_t *is_dir_out);
+
+int vfs_mkdir(const char *path);
+int vfs_rmdir(const char *path);
+int vfs_opendir(const char *path, vfs_dir_t **out);
+int vfs_readdir(vfs_dir_t *d, vfs_dirent_t *out);
+int vfs_closedir(vfs_dir_t *d);
+
+int vfs_chdir(const char *path);
+int vfs_getcwd(char *buf, uint32_t size);
 
 #endif /* CSOS_FS_VFS_H */
