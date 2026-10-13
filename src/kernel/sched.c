@@ -347,11 +347,16 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
     irqf = irq_save();
     cur->rsp = (uint64_t)(uintptr_t)frame;
 
-    /* 离开本核：worker 仍 READY 则交回本核队列；idle / SLEEPING 不入队 */
     if (!cur->is_idle)
     {
+        uint64_t sflags;
+        int requeue;
+
+        sflags = spin_lock_irqsave(&g_sched_lock);
         cur->on_cpu = 0;
-        if (cur->state == TASK_READY)
+        requeue = (cur->state == TASK_READY);
+        spin_unlock_irqrestore(&g_sched_lock, sflags);
+        if (requeue)
             ready_enqueue(cpu, cur);
     }
 

@@ -1,31 +1,8 @@
 #include <fs/ramfs.h>
 #include <fs/vfs.h>
 #include <memory/heap.h>
-#include <spinlock.h>
 #include <serial.h>
 #include <string.h>
-
-#define RAMFS_DEF_CAP 512
-
-/* 树形节点：子项按名字升序挂在 child 链表上 */
-typedef struct ramfs_node
-{
-    char name[VFS_NAME_MAX];
-    uint8_t *data;
-    uint64_t size;
-    uint64_t cap;
-    uint32_t is_dir;
-    uint32_t refs; /* 打开句柄 + 目录游标；>0 时禁止 rmdir */
-    struct ramfs_node *parent;
-    struct ramfs_node *child;
-    struct ramfs_node *sibling;
-} ramfs_node_t;
-
-typedef struct ramfs_sb
-{
-    spinlock_t lock;
-    ramfs_node_t *root;
-} ramfs_sb_t;
 
 /* 取下一段路径分量 [*p, end)，跳过连续 '/'；返回分量长度，0 表示耗尽 */
 static uint32_t ramfs_next_comp(const char **p, const char *end, const char **comp)

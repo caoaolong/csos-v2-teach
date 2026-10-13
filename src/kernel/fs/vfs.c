@@ -331,7 +331,11 @@ int vfs_open(const char *path, int flags, vfs_file_t **out)
     rc = vfs_locate(path, norm, sizeof(norm), &m, &rel);
     if (rc != VFS_OK)
         return rc;
-
+    if (!m->drv->open)
+    {
+        vfs_unpin(m);
+        return VFS_ERR_NOTSUP;
+    }
     f = (vfs_file_t *)kmalloc(sizeof(vfs_file_t));
     if (!f)
     {

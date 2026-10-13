@@ -10,4 +10,6 @@ void serial_init();
 void put_string(const char *s);
 int fput_string(const char *fmt, ...);
 
+void init_serial_dev();
+
 #endif /* SERIAL_H */
