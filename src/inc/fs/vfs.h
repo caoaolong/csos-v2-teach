@@ -18,6 +18,7 @@
 #define VFS_ERR_BUSY -12
 #define VFS_ERR_NOTEMPTY -13
 #define VFS_ERR_RANGE -14
+#define VFS_ERR_AGAIN -15 /* 非阻塞设备：暂时无数据，可重试 */
 
 /* ---- open flags（兼容 POSIX 常用子集） ---- */
 #define VFS_O_RDONLY 0x00

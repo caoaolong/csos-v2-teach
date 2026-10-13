@@ -1,6 +1,7 @@
 #include <kernel.h>
 #include <serial.h>
 #include <spinlock.h>
+#include <vdev.h>
 
 static spinlock_t g_serial_lock = SPINLOCK_INIT;
 
@@ -63,4 +64,58 @@ int fput_string(const char *fmt, ...)
     spin_unlock_irqrestore(&g_serial_lock, flags);
 
     return i;
+}
+
+static int64_t ttyS0_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
+{
+    uint8_t *p = (uint8_t *)buf;
+    uint64_t n = 0;
+    uint64_t flags;
+
+    (void)dev;
+    (void)f;
+    if (len == 0)
+        return 0;
+
+    flags = spin_lock_irqsave(&g_serial_lock);
+    while (n < len && (inb(COM1 + 5) & 0x01)) /* LSR: data ready */
+        p[n++] = inb(COM1 + 0);               /* RBR */
+    spin_unlock_irqrestore(&g_serial_lock, flags);
+
+    return n ? (int64_t)n : VFS_ERR_AGAIN;
+}
+
+static int64_t ttyS0_write(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t len)
+{
+    const uint8_t *p = (const uint8_t *)buf;
+    uint64_t i;
+    uint64_t flags;
+
+    (void)dev;
+    (void)f;
+
+    flags = spin_lock_irqsave(&g_serial_lock);
+    for (i = 0; i < len; i++)
+        serial_putchar((char)p[i]);
+    spin_unlock_irqrestore(&g_serial_lock, flags);
+    return (int64_t)len;
+}
+
+static const vdev_char_ops_t g_ttyS0_ops = {
+    .read = ttyS0_read,
+    .write = ttyS0_write,
+};
+
+static vdev_t g_ttyS0 = {
+    .name = "ttyS0",
+    .type = VDEV_CHAR,
+    .major = VDEV_MAJOR_TTY,
+    .minor = 0,
+    .ops = &g_ttyS0_ops,
+};
+
+void init_serial_dev()
+{
+    if (vdev_register(&g_ttyS0) != VFS_OK)
+        put_string("[SERIAL] register ttyS0 failed\n");
 }
