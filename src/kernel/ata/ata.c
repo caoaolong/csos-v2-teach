@@ -20,3 +20,9 @@ void ata_set(const ata_ops_t *ops)
 {
     current_ops = ops;
 }
+
+void init_ata()
+{
+    if (ata_current()->init())
+        put_string("FATAL: ata initialze failed\n");
+}

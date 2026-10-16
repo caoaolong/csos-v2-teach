@@ -22,7 +22,19 @@ int vdev_register(vdev_t *dev)
 
     if (!dev || dev->name[0] == '\0')
         return VFS_ERR_INVAL;
-    if (dev->type != VDEV_CHAR || !dev->ops || !dev->ops->read)
+    if (dev->type == VDEV_CHAR)
+    {
+        if (!dev->ops || !dev->ops->read)
+            return VFS_ERR_INVAL;
+    }
+    else if (dev->type == VDEV_BLOCK)
+    {
+        if (!dev->bops || !dev->bops->read_blocks)
+            return VFS_ERR_INVAL;
+        if (dev->block_size == 0 || dev->nblocks == 0)
+            return VFS_ERR_INVAL;
+    }
+    else
         return VFS_ERR_INVAL;
 
     flags = spin_lock_irqsave(&g_vdev_lock);

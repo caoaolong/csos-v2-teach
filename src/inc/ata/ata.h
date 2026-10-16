@@ -26,4 +26,6 @@ const ata_ops_t *ata_current(void);
 /* 切换策略（传入 NULL 则恢复默认的 PIO） */
 void ata_set(const ata_ops_t *ops);
 
+void init_ata();
+
 #endif /* CSOS_ATA_H */

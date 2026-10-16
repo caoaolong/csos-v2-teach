@@ -9,11 +9,13 @@
 
 typedef enum
 {
-    VDEV_CHAR = 1, /* 字符设备 */
+    VDEV_CHAR = 1,  /* 字符设备 */
+    VDEV_BLOCK = 2, /* 块设备：固定块大小，可随机寻址 */
 } vdev_type_t;
 
 #define VDEV_MAJOR_MEM 1
 #define VDEV_MAJOR_TTY 4
+#define VDEV_MAJOR_HD 8
 #define VDEV_MAJOR_INPUT 13
 
 typedef struct vdev vdev_t;
@@ -26,13 +28,27 @@ typedef struct vdev_char_ops
     int64_t (*write)(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t len);
 } vdev_char_ops_t;
 
+typedef struct vdev_block_ops
+{
+    int (*open)(vdev_t *dev, vfs_file_t *f);
+    int (*close)(vdev_t *dev, vfs_file_t *f);
+    /* 以块为单位；lba 为起始块号，count 为块数 */
+    int (*read_blocks)(vdev_t *dev, uint64_t lba, uint32_t count, void *buf);
+    int (*write_blocks)(vdev_t *dev, uint64_t lba, uint32_t count, const void *buf);
+    int (*flush)(vdev_t *dev);
+    uint64_t (*capacity)(vdev_t *dev); /* 返回总块数 */
+} vdev_block_ops_t;
+
 struct vdev
 {
     char name[VDEV_NAME_MAX];
     vdev_type_t type;
     uint32_t major;
     uint32_t minor;
-    const vdev_char_ops_t *ops;
+    const vdev_char_ops_t *ops;   /* type == VDEV_CHAR 时有效 */
+    const vdev_block_ops_t *bops; /* type == VDEV_BLOCK 时有效 */
+    uint64_t block_size;          /* type == VDEV_BLOCK 时有效，字节 */
+    uint64_t nblocks;             /* type == VDEV_BLOCK 时有效，总块数 */
     void *priv;
     struct vdev *next;
 };

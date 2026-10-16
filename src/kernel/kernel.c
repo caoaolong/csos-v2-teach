@@ -54,8 +54,7 @@ void kernel_main(boot_info_t *boot_info)
     init_sched();
     init_smp();
 
-    if (ata_current()->init())
-        put_string("FATAL: ata initialze failed\n");
+    init_ata();
 
     init_vfs();
     init_vdev();
