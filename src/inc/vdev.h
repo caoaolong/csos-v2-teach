@@ -16,6 +16,7 @@ typedef enum
 #define VDEV_MAJOR_MEM 1
 #define VDEV_MAJOR_TTY 4
 #define VDEV_MAJOR_HD 8
+#define VDEV_MAJOR_MISC 10
 #define VDEV_MAJOR_INPUT 13
 
 typedef struct vdev vdev_t;

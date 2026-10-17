@@ -12,4 +12,6 @@ void init_kbd();
 
 void handler_kbd(exception_frame_t *frame);
 
+void init_kbd_dev();
+
 #endif /* CSOS_KBD_H */
