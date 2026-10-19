@@ -26,6 +26,7 @@
 #include <vdev.h>
 #include <devices.h>
 #include <string.h>
+#include <part/part.h>
 
 static void user_task()
 {
@@ -60,6 +61,7 @@ void kernel_main(boot_info_t *boot_info)
     init_vdev();
     init_devfs();
     init_devices();
+    init_partitions();
 
     if (task_create_pinned(user_task, "user") == NULL)
         put_string("FATAL: user task_create failed\n");
