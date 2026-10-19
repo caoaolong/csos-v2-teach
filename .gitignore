@@ -13,3 +13,5 @@ edk2/MdeModulePkg/Application/*
 /build
 /examples/**/build
 /.opencode
+# QEMU 磁盘镜像：本地生成的大文件，不进仓库（GitHub 100MB 限制）
+/qemu/*.img
