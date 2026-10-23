@@ -774,10 +774,5 @@ const fs_driver_t devfs_driver = {
 void init_devfs()
 {
     if (vfs_register_driver(&devfs_driver) != VFS_OK)
-    {
         put_string("[DEVFS] register driver failed\n");
-        return;
-    }
-    if (vfs_mount("devfs", "/dev", "devfs") != VFS_OK)
-        put_string("[DEVFS] mount /dev failed\n");
 }
