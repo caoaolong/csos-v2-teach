@@ -64,7 +64,7 @@ void kernel_main(boot_info_t *boot_info)
     init_devices();
     init_partitions();
     init_mounts();
-    test_fat_read();
+    test_ext4_read();
 
     if (task_create_pinned(user_task, "user") == NULL)
         put_string("FATAL: user task_create failed\n");
