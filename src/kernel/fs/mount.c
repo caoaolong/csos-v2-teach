@@ -2,15 +2,20 @@
 #include <fs/vfs.h>
 #include <fs/ramfs.h>
 #include <fs/fat32.h>
+#include <fs/ext4.h>
 #include <part/part.h>
 #include <serial.h>
 #include <string.h>
 
-static const char *const g_probe_fs[] = {
+static const char *const g_probe_fat[] = {
     "fat32",
 };
 
-static int mount_auto(const char *mp)
+static const char *const g_probe_ext[] = {
+    "ext4",
+};
+
+static int mount_auto(const char *mp, const char *const *probe, int nprobe)
 {
     char name[PART_NAME_MAX];
     int total = part_count();
@@ -20,17 +25,17 @@ static int mount_auto(const char *mp)
     {
         if (part_name(i, name, sizeof(name)) != VFS_OK)
             continue;
-        for (k = 0; k < (int)(sizeof(g_probe_fs) / sizeof(g_probe_fs[0])); k++)
+        for (k = 0; k < nprobe; k++)
         {
-            int rc = vfs_mount(g_probe_fs[k], mp, name);
+            int rc = vfs_mount(probe[k], mp, name);
 
             if (rc == VFS_OK)
             {
-                fput_string("[MOUNT] %s -> %s driver='%s'\n", name, mp, g_probe_fs[k]);
+                fput_string("[MOUNT] %s -> %s driver='%s'\n", name, mp, probe[k]);
                 return VFS_OK;
             }
             if (rc != VFS_ERR_NODEV && rc != VFS_ERR_NOTSUP)
-                fput_string("[MOUNT] probe %s with '%s' rc=%d\n", name, g_probe_fs[k], rc);
+                fput_string("[MOUNT] probe %s with '%s' rc=%d\n", name, probe[k], rc);
         }
     }
     fput_string("[MOUNT] no probeable fs for %s, skip\n", mp);
@@ -43,6 +48,8 @@ void init_mounts()
         put_string("[MOUNT] register ramfs failed\n");
     if (vfs_register_driver(&fat32_driver) != VFS_OK)
         put_string("[MOUNT] register fat32 failed\n");
+    if (vfs_register_driver(&ext4_driver) != VFS_OK)
+        put_string("[MOUNT] register ext4 failed\n");
 
     /* 固定挂载：类型写死，不探测 */
     if (vfs_mount("devfs", "/dev", "devfs") != VFS_OK)
@@ -50,27 +57,31 @@ void init_mounts()
     if (vfs_mount("ramfs", "/", "ramfs") != VFS_OK)
         put_string("[MOUNT] FATAL: root mount failed\n");
 
-    /* 数据分区：自动探测（首个 FAT32 卷 -> /fat） */
-    mount_auto("/fat");
+    /* 数据分区：自动探测（首个 FAT32 卷 -> /fat，首个 EXT4 卷 -> /ext4） */
+    mount_auto("/fat", g_probe_fat, (int)(sizeof(g_probe_fat) / sizeof(g_probe_fat[0])));
+    mount_auto("/ext4", g_probe_ext, (int)(sizeof(g_probe_ext) / sizeof(g_probe_ext[0])));
 }
 
-void test_fat_read()
+void test_ext4_read()
 {
-    static const char path[] = "/fat/usr/local/bin/helloworld.txt";
     vfs_file_t *f = NULL;
-    char buf[128];
+    char buf[1024];
     int64_t n;
-    int i;
+    int rc;
 
-    /* 只读打开并打印内容 */
-    if (vfs_open(path, VFS_O_RDONLY, &f) != VFS_OK)
-    {
-        fput_string("[TEST] open '%s' FAIL\n", path);
+    rc = vfs_open("/ext4/usr/local/bin/gcc", VFS_O_RDONLY, &f);
+    fput_string("[TEST] open '/ext4/usr/local/bin/gcc' rc=%d %s\n",
+                rc, rc == VFS_OK ? "OK" : "FAIL");
+    if (rc != VFS_OK)
         return;
-    }
-    kernel_memset(buf, 0, sizeof(buf));
+
     n = vfs_read(f, buf, sizeof(buf) - 1);
     vfs_close(f);
-    fput_string("[TEST] read '%s' n=%lld data='%s' %s\n",
-                path, n, buf, n > 0 ? "OK" : "FAIL");
+    if (n < 0)
+    {
+        fput_string("[TEST] gcc read failed rc=%lld\n", (long long)n);
+        return;
+    }
+    buf[n] = '\0';
+    fput_string("[TEST] gcc content (%lld bytes):\n%s\n", (long long)n, buf);
 }
