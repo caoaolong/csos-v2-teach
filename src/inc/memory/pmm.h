@@ -68,6 +68,9 @@ typedef struct boot_info
     uint32_t descriptor_version;
 
     uint64_t rsdp;
+
+    uint64_t config_addr;
+    uint64_t config_size;
 } boot_info_t;
 
 /* 扫描 Memory Map，建立空闲页 bitmap，标记内核占用页 */

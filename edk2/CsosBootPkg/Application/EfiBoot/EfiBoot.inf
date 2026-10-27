@@ -10,6 +10,8 @@
   Main.c
   BootGraphics.c
   BootGraphics.h
+  BootConfig.c
+  BootConfig.h
   ElfLoader.c
   ElfLoader.h
   SetupUtility.c

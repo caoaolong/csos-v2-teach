@@ -28,6 +28,7 @@
 #include <string.h>
 #include <part/part.h>
 #include <fs/mount.h>
+#include <config.h>
 
 static void user_task()
 {
@@ -39,7 +40,9 @@ static void user_task()
 
 void kernel_main(boot_info_t *boot_info)
 {
-    serial_init();
+    parse_apply_boot_config(boot_info);
+    boot_config_summary();
+
     init_gdt();
     init_idt();
     init_syscall();
@@ -64,7 +67,7 @@ void kernel_main(boot_info_t *boot_info)
     init_devices();
     init_partitions();
     init_mounts();
-    test_ext4_read();
+    test_init_path();
 
     if (task_create_pinned(user_task, "user") == NULL)
         put_string("FATAL: user task_create failed\n");
