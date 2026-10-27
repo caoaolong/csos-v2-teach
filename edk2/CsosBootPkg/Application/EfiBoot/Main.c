@@ -10,6 +10,7 @@
 #include "BootGraphics.h"
 #include "ElfLoader.h"
 #include "SetupUtility.h"
+#include "BootConfig.h"
 
 #define CSOS_BOOT_INFO_ADDR 0x40000ULL
 #define CSOS_BOOT_INFO_MAGIC 0xC505B007ULL
@@ -33,6 +34,9 @@ typedef struct
     UINT32 descriptor_version;
 
     UINT64 rsdp;
+
+    UINT64 config_addr; // csos.cfg raw text (EfiLoaderData pages, 0 if absent)
+    UINT64 config_size; // bytes of csos.cfg (0 if absent)
 } BootInfo;
 
 typedef VOID (*KERNEL_ENTRY)(BootInfo *);
@@ -127,6 +131,8 @@ UefiMain(
     BOOLEAN EnterSetup;
     BOOLEAN BootRequested;
     BOOLEAN SetupInitialized;
+    EFI_PHYSICAL_ADDRESS CfgAddr;
+    UINTN CfgSize;
 
     (VOID) SystemTable;
 
@@ -221,6 +227,20 @@ UefiMain(
         return Status;
     }
 
+    // grub.cfg-style config: load and keep raw text for the kernel.
+    // Missing file is fine: CfgAddr/CfgSize stay 0, kernel uses defaults.
+    CfgAddr = 0;
+    CfgSize = 0;
+    {
+        EFI_STATUS CfgStatus = LoadBootConfig(Root, L"\\csos.cfg", &CfgAddr, &CfgSize);
+        if (EFI_ERROR(CfgStatus) && CfgStatus != EFI_NOT_FOUND)
+        {
+            Print(L"EfiBoot: csos.cfg load error: %r (continue with defaults)\n", CfgStatus);
+            CfgAddr = 0;
+            CfgSize = 0;
+        }
+    }
+
     Status = LoadElf64(Root, L"\\kernel.elf", &EntryPoint, &KernelBase);
     if (EFI_ERROR(Status))
     {
@@ -246,6 +266,8 @@ UefiMain(
     BootInfoPtr = (BootInfo *)(UINTN)BootInfoPhys;
     ZeroMem(BootInfoPtr, sizeof(BootInfo));
     BootInfoPtr->magic = CSOS_BOOT_INFO_MAGIC;
+    BootInfoPtr->config_addr = (UINT64)CfgAddr;
+    BootInfoPtr->config_size = (UINT64)CfgSize;
 
     Status = FindAcpiRsdp(&BootInfoPtr->rsdp);
     if (EFI_ERROR(Status))

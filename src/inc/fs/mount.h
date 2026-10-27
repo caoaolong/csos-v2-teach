@@ -3,6 +3,6 @@
 
 void init_mounts();
 
-void test_ext4_read();
+void test_init_path();
 
 #endif /* CSOS_FS_MOUNT_H */
