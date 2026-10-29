@@ -20,6 +20,11 @@ USER_DIR   = $(SRC_DIR)/user
 USER_ELF   = $(BUILD_DIR)/user.elf
 USER_BIN   = $(BUILD_DIR)/user.bin
 
+CSFS       = csfs
+INIT_IMG   = qemu/DMBR.img
+INIT_PART  = 1
+INIT_DST   = /sbin/init
+
 CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -MMD -MP
 UFLAGS = -ffreestanding -mno-red-zone -fno-builtin -fno-asynchronous-unwind-tables -g -O0 -I$(INC_DIR) -I$(USER_DIR) -I$(LIB_DIR) -MMD -MP
 
@@ -42,7 +47,7 @@ LIB_SRCS_C = $(wildcard $(LIB_DIR)/*.c)
 LIBC_OBJS  = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(LIB_SRCS_C))
 LIB_DEPS   = $(LIBC_OBJS:.o=.d) $(CRT0:.o=.d)
 
-all: $(KERNEL)
+all: $(KERNEL) $(USER_ELF)
 
 -include $(KERNEL_DEPS)
 -include $(USER_DEPS)
@@ -103,12 +108,16 @@ $(KERNEL): $(KERNEL_OBJS) $(USER_BIN) $(KERNEL_DIR)/kernel.ld
 clean:
 	rm -rf $(BUILD_DIR)
 
-master: $(KERNEL)
+master: $(KERNEL) $(USER_ELF) install-init
 	mkdir -p qemu/hda-contents/EFI/BOOT
 	cp -f edk2\Build\OvmfX64\NOOPT_VS2026\FV\OVMF.fd OVMF.fd
 	cp -f edk2\Build\CsosBootPkg\DEBUG_VS2026\X64\EfiBoot.efi qemu/hda-contents/EFI/BOOT/BOOTX64.EFI
 	cp -f $(KERNEL) qemu/hda-contents/kernel.elf
 	cp -f $(USER_ELF) qemu/hda-contents/user.elf
+
+# 将 user.elf 写入根盘 FAT32 分区，供 init=/sbin/init 加载
+install-init: $(USER_ELF)
+	$(CSFS) $(INIT_IMG) cp $(USER_ELF) $(INIT_DST) --partition $(INIT_PART) --mkdirs --overwrite
 
 # 启动qemu模拟环境
 qemu: master
