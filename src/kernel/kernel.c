@@ -32,8 +32,8 @@
 
 static void user_task()
 {
-    user_enter_demo();
-    /* user_enter_demo 不返回；防御性兜底 */
+    user_enter_init(g_boot_config.init);
+    /* user_enter_* 不返回；防御性兜底 */
     for (;;)
         __asm__ volatile("hlt");
 }
@@ -67,7 +67,6 @@ void kernel_main(boot_info_t *boot_info)
     init_devices();
     init_partitions();
     init_mounts();
-    test_init_path();
 
     if (task_create_pinned(user_task, "user") == NULL)
         put_string("FATAL: user task_create failed\n");

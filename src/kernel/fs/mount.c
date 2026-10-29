@@ -140,7 +140,7 @@ static void init_mounts_config(void)
         if (kernel_strcmp(m->fstype, "auto") == 0)
         {
             if (mount_dev_probe(m->mountpoint, m->dev, g_probe_fat,
-                               (int)(sizeof(g_probe_fat) / sizeof(g_probe_fat[0]))) == VFS_OK)
+                                (int)(sizeof(g_probe_fat) / sizeof(g_probe_fat[0]))) == VFS_OK)
                 continue;
             rc = mount_dev_probe(m->mountpoint, m->dev, g_probe_ext,
                                  (int)(sizeof(g_probe_ext) / sizeof(g_probe_ext[0])));
@@ -174,28 +174,4 @@ void init_mounts()
         init_mounts_config();
     else
         init_mounts_legacy();
-}
-
-void test_init_path()
-{
-    vfs_file_t *f = NULL;
-    char buf[1024];
-    int64_t n;
-    int rc;
-
-    rc = vfs_open(g_boot_config.init, VFS_O_RDONLY, &f);
-    fput_string("[TEST] open '%s' rc=%d %s\n",
-                g_boot_config.init, rc, rc == VFS_OK ? "OK" : "FAIL");
-    if (rc != VFS_OK)
-        return;
-
-    n = vfs_read(f, buf, sizeof(buf) - 1);
-    vfs_close(f);
-    if (n < 0)
-    {
-        fput_string("[TEST] init read failed rc=%lld\n", (long long)n);
-        return;
-    }
-    buf[n] = '\0';
-    fput_string("[TEST] init content (%lld bytes):\n%s\n", (long long)n, buf);
 }

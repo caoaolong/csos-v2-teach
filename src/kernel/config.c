@@ -34,7 +34,7 @@ static void cfg_set_defaults(void)
     kernel_memset(&g_boot_config, 0, (uint32_t)sizeof(g_boot_config));
     kernel_strncpy(g_boot_config.pmm, "bitmap", sizeof(g_boot_config.pmm));
     kernel_strncpy(g_boot_config.disk, "ata-pio", sizeof(g_boot_config.disk));
-    kernel_strncpy(g_boot_config.init, "/ext4/usr/local/bin/gcc",
+    kernel_strncpy(g_boot_config.init, "/sbin/init",
                    sizeof(g_boot_config.init));
     kernel_strncpy(g_boot_config.debug, "serial", sizeof(g_boot_config.debug));
     g_boot_config.timeout = 3;

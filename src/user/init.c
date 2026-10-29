@@ -1,6 +1,6 @@
 #include "ulib.h"
 
-int main(void)
+int main()
 {
     for (;;)
         sleep(500);

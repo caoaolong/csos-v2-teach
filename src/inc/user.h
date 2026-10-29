@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 
-#define USER_CODE_VADDR 0x40000000ULL
 #define USER_STACK_VADDR 0x40001000ULL
 #define USER_STACK_TOP (USER_STACK_VADDR + 0x1000ULL)
 
@@ -11,7 +10,6 @@
 #define SYS_EXIT 2
 #define SYS_SLEEP 3 /* int 0x80: rdi = 睡眠毫秒数 */
 
-/* 映射用户页、设置 TSS.RSP0，iretq 进入 ring3（不返回） */
-void user_enter_demo();
+void user_enter_init(const char *init_path);
 
 #endif /* CSOS_USER_H */
