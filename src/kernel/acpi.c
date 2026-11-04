@@ -1,5 +1,6 @@
 #include <acpi.h>
 #include <serial.h>
+#include <panic.h>
 #include <string.h>
 
 enum
@@ -72,9 +73,7 @@ const madt_info_t *acpi_madt()
 
 static void acpi_halt(const char *msg)
 {
-    put_string(msg);
-    for (;;)
-        __asm__ volatile("hlt");
+    panic("%s", msg);
 }
 
 static int acpi_checksum_ok(const void *data, uint32_t len)

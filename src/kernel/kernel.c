@@ -9,7 +9,7 @@
 #include <memory/vmm.h>
 #include <memory/heap.h>
 #include <gfx/fb.h>
-#include <gfx/logo.h>
+#include <gfx/console.h>
 #include <pic.h>
 #include <pit.h>
 #include <acpi.h>
@@ -19,6 +19,7 @@
 #include <timer.h>
 #include <sched.h>
 #include <smp.h>
+#include <panic.h>
 #include <user.h>
 #include <syscall.h>
 #include <ata/ata.h>
@@ -51,6 +52,16 @@ void kernel_main(boot_info_t *boot_info)
     init_vmm(boot_info);
     init_heap();
 
+    /* splash + 文本区初始化 */
+    fb_console_init_boot(boot_info);
+    {
+        uint32_t cols = 0;
+        uint32_t rows = 0;
+
+        fb_console_size(&cols, &rows);
+        fput_string("[CONSOLE] READY %ux%u\n", cols, rows);
+    }
+
     init_acpi(boot_info);
     init_lapic();
     init_ioapic();
@@ -69,9 +80,7 @@ void kernel_main(boot_info_t *boot_info)
     init_mounts();
 
     if (task_create_pinned(user_task, "user") == NULL)
-        put_string("FATAL: user task_create failed\n");
+        panic("FATAL: user task_create failed\n");
 
     __asm__ volatile("sti");
-
-    fb_draw_logo_splash(boot_info, LOGO_pixels, LOGO_WIDTH, LOGO_HEIGHT);
 }

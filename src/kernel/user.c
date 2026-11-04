@@ -4,9 +4,11 @@
 #include <memory/vmm.h>
 #include <memory/heap.h>
 #include <serial.h>
+#include <panic.h>
 #include <string.h>
 #include <syscall.h>
 #include <tss.h>
+#include <gfx/console.h>
 #include <fs/vfs.h>
 #include <kernel_layout.h>
 
@@ -24,9 +26,7 @@ uint64_t syscall_user_rsp;
 
 static void user_halt(const char *msg)
 {
-    put_string(msg);
-    for (;;)
-        __asm__ volatile("hlt");
+    panic("%s", msg);
 }
 
 /* 按字节拷贝：绕开 kernel_memcpy 的 uint32_t 长度限制；目标为内核可写的物理页 */
@@ -241,6 +241,9 @@ static void setup_kstack_and_enter(uint64_t rip)
     kstack_top = (uint64_t)(uintptr_t)g_kernel_stack_page + PAGE_SIZE;
     syscall_kstack_top = kstack_top; /* 供 syscall_entry 切栈 */
     tss_set_rsp0(kstack_top);
+
+    /* 进 init 前清屏：splash 只留在启动阶段，用户态从干净屏幕开始 */
+    fb_console_clear_full();
 
     fput_string("[USER] enter rip=0x%llx rsp=0x%llx rsp0=0x%llx\n",
                 (unsigned long long)rip,

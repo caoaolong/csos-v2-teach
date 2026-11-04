@@ -34,7 +34,6 @@ LoadBootConfig(
     Status = Root->Open(Root, &File, FileName, EFI_FILE_MODE_READ, 0);
     if (EFI_ERROR(Status))
     {
-        Print(L"EfiBoot: csos.cfg not found (%r), using defaults\n", Status);
         return EFI_NOT_FOUND;
     }
 

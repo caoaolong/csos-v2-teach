@@ -1,12 +1,7 @@
 #include <assert.h>
-#include <serial.h>
+#include <panic.h>
 
-void __assert_fail(const char *expr, const char *file, int line)
+void __assert_fail(const char *expr, const char *file, int line, const char *func)
 {
-    fput_string("ASSERT FAILED: %s at %s:%d\n", expr, file, line);
-
-    for (;;)
-    {
-        __asm__ volatile("hlt");
-    }
+    panic("ASSERT FAILED: %s at %s:%d in %s()\n", expr, file, line, func);
 }

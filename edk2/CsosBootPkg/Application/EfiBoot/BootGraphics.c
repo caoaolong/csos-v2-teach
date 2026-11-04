@@ -168,8 +168,6 @@ BootGraphicsApplyMode (
   EFI_STATUS                    Status;
   EFI_GRAPHICS_OUTPUT_PROTOCOL  *Gop;
   UINT32                        TargetMode;
-  UINT32                        TargetW;
-  UINT32                        TargetH;
 
   Status = BootGraphicsSelectMode (Setup, &TargetMode);
   if (EFI_ERROR (Status)) {
@@ -187,14 +185,6 @@ BootGraphicsApplyMode (
 
   if (Gop->Mode->Mode == TargetMode) {
     return EFI_SUCCESS;
-  }
-
-  if ((Setup == NULL) || (Setup->PreferEdid != 0)) {
-    if (GetEdidPreferredResolution (&TargetW, &TargetH)) {
-      Print (L"EfiBoot: EDID preferred %ux%u, GOP mode %u\n", TargetW, TargetH, TargetMode);
-    }
-  } else {
-    Print (L"EfiBoot: manual GOP mode %u\n", TargetMode);
   }
 
   Status = Gop->SetMode (Gop, TargetMode);

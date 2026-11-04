@@ -6,7 +6,7 @@
 #define FB_PIXEL_RGB 0 /* byte order R,G,B,X */
 #define FB_PIXEL_BGR 1 /* byte order B,G,R,X */
 
-static uint32_t xrgb_to_fb(uint32_t xrgb, uint32_t format)
+uint32_t fb_pack_pixel(uint32_t xrgb, uint32_t format)
 {
     uint32_t r = (xrgb >> 16) & 0xff;
     uint32_t g = (xrgb >> 8) & 0xff;
@@ -20,6 +20,11 @@ static uint32_t xrgb_to_fb(uint32_t xrgb, uint32_t format)
 
     /* FB_PIXEL_RGB: LE store of 0x00BBGGRR => memory R,G,B,X */
     return (b << 16) | (g << 8) | r;
+}
+
+static uint32_t xrgb_to_fb(uint32_t xrgb, uint32_t format)
+{
+    return fb_pack_pixel(xrgb, format);
 }
 
 static void fb_fill(boot_info_t *boot, uint32_t color_rgb)

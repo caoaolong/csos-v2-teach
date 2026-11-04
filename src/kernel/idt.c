@@ -1,5 +1,6 @@
 #include <idt.h>
 #include <serial.h>
+#include <panic.h>
 
 idt_entry_t idt[IDT_SIZE];
 
@@ -33,16 +34,11 @@ static void install_interrupt_handler(int vector, void (*handler)(void))
 
 static void exception_halt(exception_frame_t *frame, const char *name)
 {
-    fput_string("Exception %s vector=%d error=0x%x rip=0x%llx\n",
-                name,
-                (int)frame->vector,
-                (unsigned)frame->error_code,
-                frame->rip);
-
-    for (;;)
-    {
-        __asm__ volatile("hlt");
-    }
+    panic("Exception %s vector=%d error=0x%x rip=0x%llx\n",
+          name,
+          (int)frame->vector,
+          (unsigned)frame->error_code,
+          frame->rip);
 }
 
 void init_idt()
@@ -167,15 +163,11 @@ static uint64_t read_cr2()
 
 void handler_page(exception_frame_t *frame)
 {
-    fput_string("Exception page vector=%d error=0x%x rip=0x%llx cr2=0x%llx\n",
-                (int)frame->vector,
-                (unsigned)frame->error_code,
-                frame->rip,
-                read_cr2());
-    for (;;)
-    {
-        __asm__ volatile("hlt");
-    }
+    panic("Exception page vector=%d error=0x%x rip=0x%llx cr2=0x%llx\n",
+          (int)frame->vector,
+          (unsigned)frame->error_code,
+          frame->rip,
+          read_cr2());
 }
 
 void handler_fpu(exception_frame_t *frame)

@@ -83,3 +83,20 @@ VOID
 CsosSetupUtilityFree (
   VOID
   );
+
+/**
+  Show a full-screen fatal boot error, then cold-reset the machine.
+
+  Draws a dark error page (title + step + status code) when graphics is
+  available, otherwise prints to ConOut. Waits up to 10 seconds for any
+  key, then resets unconditionally. Intended for errors that make it
+  impossible to continue booting (missing kernel, bad memory map, ...).
+
+  @param[in] Detail   Short failed-step description, e.g. L"LOAD KERNEL.ELF".
+  @param[in] Status   The failing EFI_STATUS.
+**/
+VOID
+CsosShowFatalError (
+  IN CONST CHAR16  *Detail,
+  IN EFI_STATUS    Status
+  );
