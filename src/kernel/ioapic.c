@@ -3,6 +3,7 @@
 #include <memory/pmm.h>
 #include <memory/vmm.h>
 #include <serial.h>
+#include <panic.h>
 
 #define IOAPIC_REGSEL 0x00
 #define IOAPIC_WINDOW 0x10
@@ -32,9 +33,7 @@ static uint32_t g_ioapic_count;
 
 static void ioapic_halt(const char *msg)
 {
-    put_string(msg);
-    for (;;)
-        __asm__ volatile("hlt");
+    panic("%s", msg);
 }
 
 static uint32_t ioapic_read(ioapic_dev_t *dev, uint32_t reg)

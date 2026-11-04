@@ -2,6 +2,7 @@
 #include <apic/lapic.h>
 #include <memory/vmm.h>
 #include <serial.h>
+#include <panic.h>
 #include <pic.h>
 #include <pit.h>
 #include <cpu.h>
@@ -44,16 +45,12 @@ static volatile uint32_t *g_lapic;
 
 static void lapic_halt(const char *msg)
 {
-    put_string(msg);
-    for (;;)
-        __asm__ volatile("hlt");
+    panic("%s", msg);
 }
 
 static void timer_halt(const char *msg)
 {
-    put_string(msg);
-    for (;;)
-        __asm__ volatile("hlt");
+    panic("%s", msg);
 }
 
 static uint32_t lapic_read(uint32_t reg)

@@ -171,8 +171,6 @@ UefiMain(
             BootRequested = FALSE;
             if (SetupConfig.AutoBoot != 0)
             {
-                Print(L"EfiBoot: press F2 for Setup, auto boot in %u sec\n",
-                      SetupConfig.BootTimeout);
                 CsosSetupUtilityWaitForKey(SetupConfig.BootTimeout, &EnterSetup);
             }
             else
@@ -206,7 +204,7 @@ UefiMain(
         (VOID **)&LoadedImage);
     if (EFI_ERROR(Status))
     {
-        Print(L"EfiBoot: LoadedImage failed: %r\n", Status);
+        CsosShowFatalError(L"GET LOADED IMAGE PROTOCOL", Status);
         return Status;
     }
 
@@ -216,14 +214,14 @@ UefiMain(
         (VOID **)&Fs);
     if (EFI_ERROR(Status))
     {
-        Print(L"EfiBoot: SimpleFileSystem failed: %r\n", Status);
+        CsosShowFatalError(L"GET ESP FILESYSTEM", Status);
         return Status;
     }
 
     Status = Fs->OpenVolume(Fs, &Root);
     if (EFI_ERROR(Status))
     {
-        Print(L"EfiBoot: OpenVolume failed: %r\n", Status);
+        CsosShowFatalError(L"OPEN ESP VOLUME", Status);
         return Status;
     }
 
@@ -244,7 +242,7 @@ UefiMain(
     Status = LoadElf64(Root, L"\\kernel.elf", &EntryPoint, &KernelBase);
     if (EFI_ERROR(Status))
     {
-        Print(L"EfiBoot: LoadElf64 failed: %r\n", Status);
+        CsosShowFatalError(L"LOAD KERNEL.ELF", Status);
         return Status;
     }
 
@@ -258,8 +256,7 @@ UefiMain(
         &BootInfoPhys);
     if (EFI_ERROR(Status))
     {
-        Print(L"EfiBoot: AllocatePages(boot_info @ 0x%lx) failed: %r\n",
-              CSOS_BOOT_INFO_ADDR, Status);
+        CsosShowFatalError(L"ALLOCATE BOOT INFO PAGE", Status);
         return Status;
     }
 
@@ -274,10 +271,6 @@ UefiMain(
     {
         Print(L"EfiBoot: ACPI RSDP not found: %r\n", Status);
         BootInfoPtr->rsdp = 0;
-    }
-    else
-    {
-        Print(L"EfiBoot: ACPI RSDP at 0x%lx\n", BootInfoPtr->rsdp);
     }
 
     Status = InitGraphics(BootInfoPtr);
@@ -305,7 +298,7 @@ UefiMain(
             &DescriptorVersion);
         if (Status != EFI_BUFFER_TOO_SMALL)
         {
-            Print(L"EfiBoot: GetMemoryMap size failed: %r\n", Status);
+            CsosShowFatalError(L"READ MEMORY MAP", Status);
             return Status;
         }
 
@@ -313,6 +306,7 @@ UefiMain(
         MemMap = AllocatePool(MemMapSize);
         if (MemMap == NULL)
         {
+            CsosShowFatalError(L"READ MEMORY MAP", EFI_OUT_OF_RESOURCES);
             return EFI_OUT_OF_RESOURCES;
         }
 
@@ -325,7 +319,7 @@ UefiMain(
         if (EFI_ERROR(Status))
         {
             FreePool(MemMap);
-            Print(L"EfiBoot: GetMemoryMap failed: %r\n", Status);
+            CsosShowFatalError(L"READ MEMORY MAP", Status);
             return Status;
         }
 
@@ -345,7 +339,7 @@ UefiMain(
 
     if (EFI_ERROR(Status))
     {
-        Print(L"EfiBoot: ExitBootServices failed: %r\n", Status);
+        CsosShowFatalError(L"EXIT BOOT SERVICES", Status);
         return Status;
     }
 

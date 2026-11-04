@@ -3,6 +3,7 @@
 #include <apic/ioapic.h>
 #include <kernel.h>
 #include <serial.h>
+#include <panic.h>
 #include <spinlock.h>
 #include <string.h>
 #include <vdev.h>
@@ -73,9 +74,7 @@ static const char g_set1_map[128] = {
 
 static void kbd_halt(const char *msg)
 {
-    put_string(msg);
-    for (;;)
-        __asm__ volatile("hlt");
+    panic("%s", msg);
 }
 
 static void kbd_wait_ibf_clear()

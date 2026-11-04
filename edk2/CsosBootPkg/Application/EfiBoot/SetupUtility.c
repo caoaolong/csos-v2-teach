@@ -78,6 +78,7 @@ STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL mClrDisabled;
 STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL mClrFocus;
 STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL mClrBtn;
 STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL mClrBtnHover;
+STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL mClrErrBg;
 
 STATIC
 VOID GfxFillRect(
@@ -119,6 +120,7 @@ VOID InitPalette(
     mClrFocus = (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)RGB(39, 39, 42);
     mClrBtn = (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)RGB(39, 39, 46);
     mClrBtnHover = (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)RGB(63, 63, 70);
+    mClrErrBg = (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)RGB(96, 16, 96);
 }
 
 STATIC
@@ -1175,4 +1177,114 @@ VOID CsosSetupUtilityFree(
     mGfxReady = FALSE;
     mGop = NULL;
     mHiiFont = NULL;
+}
+
+#define STR_ERR_TITLE L"BOOT FAILED"
+#define STR_ERR_HINT_FMT L"REBOOTING IN %2u SECONDS - PRESS ANY KEY NOW"
+#define ERR_REBOOT_TIMEOUT_SEC 10
+
+VOID CsosShowFatalError(
+    IN CONST CHAR16 *Detail,
+    IN EFI_STATUS Status)
+{
+    CHAR16 Code[64];
+    CHAR16 Hint[96];
+    EFI_INPUT_KEY Key;
+    UINTN W;
+    UINTN H;
+    UINTN Y;
+    UINTN HintY;
+    UINTN i;
+    UINTN s;
+    BOOLEAN HasBorder;
+
+    if (Detail == NULL)
+    {
+        Detail = L"UNKNOWN FAILURE";
+    }
+
+    UnicodeSPrint(
+        Code,
+        sizeof(Code),
+        L"%r (0x%lx)",
+        Status,
+        (UINT64)Status);
+
+    //
+    // ConOut/serial log first: visible even when graphics is unavailable.
+    //
+    Print(L"EfiBoot: FATAL: %s: %s\n", Detail, Code);
+
+    if (!EFI_ERROR(GfxInit()) && (mGop != NULL))
+    {
+        W = mGop->Mode->Info->HorizontalResolution;
+        H = mGop->Mode->Info->VerticalResolution;
+
+        GfxFillRect(0, 0, W, H, &mClrErrBg);
+        HasBorder = (BOOLEAN)((W > 96) && (H > 96));
+        if (HasBorder)
+        {
+            GfxDrawBorder(24, 24, W - 48, H - 48, &mClrText);
+        }
+
+        Y = (H > 240) ? (H / 2 - 100) : 10;
+        HintY = Y + 140;
+        if (H >= 160)
+        {
+            GfxDrawTextCentered(Y, &mClrText, &mClrErrBg, STR_ERR_TITLE);
+            GfxDrawTextCentered(Y + 48, &mClrText, &mClrErrBg, Detail);
+            GfxDrawTextCentered(Y + 86, &mClrMuted, &mClrErrBg, Code);
+        }
+
+        //
+        // Drain keys pressed earlier (e.g. held F2) so the page stays visible.
+        //
+        while (!EFI_ERROR(ReadKey(&Key)))
+        {
+        }
+
+        for (i = 0; i < ERR_REBOOT_TIMEOUT_SEC * 10; i++)
+        {
+            if (((i % 10) == 0) && (HintY + 30 <= H))
+            {
+                s = ERR_REBOOT_TIMEOUT_SEC - i / 10;
+                UnicodeSPrint(
+                    Hint,
+                    sizeof(Hint),
+                    STR_ERR_HINT_FMT,
+                    s);
+                //
+                // Erase only the text row itself: a full-width fill
+                // would wipe the border's vertical edges on this row.
+                //
+                if (HasBorder)
+                {
+                    GfxFillRect(25, HintY, W - 50, 30, &mClrErrBg);
+                }
+                else
+                {
+                    GfxFillRect(0, HintY, W, 30, &mClrErrBg);
+                }
+                GfxDrawTextCentered(HintY, &mClrText, &mClrErrBg, Hint);
+            }
+
+            if (!EFI_ERROR(ReadKey(&Key)))
+            {
+                break;
+            }
+
+            gBS->Stall(100000);
+        }
+    }
+    else
+    {
+        //
+        // No graphics: park on ConOut text, any key reboots.
+        //
+        Print(L"EfiBoot: PRESS ANY KEY TO REBOOT\n");
+        WaitForKey(&Key);
+    }
+
+    gRT->ResetSystem(EfiResetCold, EFI_SUCCESS, 0, NULL);
+    CpuDeadLoop();
 }
