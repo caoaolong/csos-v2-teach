@@ -4,6 +4,7 @@
 #include <timer.h>
 #include <apic.h>
 #include <sched.h>
+#include <gfx/console.h>
 
 static uint32_t g_timer_hz = APIC_TIMER_DEFAULT_HZ;
 
@@ -20,7 +21,10 @@ void handler_timer(exception_frame_t *frame)
     (void)frame;
     /* 多核都开 timer 时只让 BSP 推进全局 jiffies，避免倍速 */
     if (is_bsp())
+    {
         jiffies++;
+        fb_console_tick();
+    }
     sched_wake_sleepers();
     lapic_eoi();
 }

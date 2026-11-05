@@ -1,34 +1,5 @@
-#include "ulib.h"
-
-unsigned long strlen(const char *s)
-{
-    unsigned long n = 0;
-
-    while (s[n] != '\0')
-        n++;
-    return n;
-}
-
-void *memcpy(void *dst, const void *src, unsigned long n)
-{
-    unsigned long i;
-    char *d = (char *)dst;
-    const char *s = (const char *)src;
-
-    for (i = 0; i < n; i++)
-        d[i] = s[i];
-    return dst;
-}
-
-void *memset(void *s, int c, unsigned long n)
-{
-    unsigned long i;
-    char *p = (char *)s;
-
-    for (i = 0; i < n; i++)
-        p[i] = (char)c;
-    return s;
-}
+#include <user.h>
+#include "unistd.h"
 
 static long syscall1(long num, long arg)
 {
@@ -46,4 +17,31 @@ static long syscall1(long num, long arg)
 void sleep(unsigned long ms)
 {
     syscall1(SYS_SLEEP, (long)ms);
+}
+
+static long syscall3(long num, long a, long b, long c)
+{
+    long ret;
+
+    __asm__ volatile(
+        "syscall"
+        : "=a"(ret)
+        : "a"(num), "D"(a), "S"(b), "d"(c)
+        : "rcx", "r11", "memory");
+    return ret;
+}
+
+/* 写串口+帧缓冲：返回写入字节数，<0 出错 */
+long write(int fd, const void *buf, unsigned long len)
+{
+    return syscall3(SYS_WRITE, (long)fd, (long)buf, (long)len);
+}
+
+/* 结束当前任务（v1：停住不返回） */
+void exit(int code)
+{
+    syscall1(SYS_EXIT, (long)code);
+    for (;;)
+    {
+    }
 }
