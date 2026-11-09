@@ -4,8 +4,10 @@
 #include <serial.h>
 #include <syscall.h>
 #include <timer.h>
-#include <abi.h> /* SYS_*：内核↔用户态共识的调用号 */
-#include <kbd.h>
+#include <abi.h>
+#include <fd.h>
+#include <sched.h>
+#include <fs/vfs.h>
 #include <gfx/console.h>
 
 #define MSR_EFER 0xC0000080
@@ -62,17 +64,23 @@ static int user_mem_ok(uint64_t vaddr, uint64_t size)
 
 static uint64_t do_sys_write(uint64_t fd, uint64_t ubuf, uint64_t len)
 {
-    const void *p = (const void *)(uintptr_t)ubuf;
+    vfs_file_t *f;
+    int64_t n;
 
-    if (fd != STDOUT_FILENO && fd != STDERR_FILENO)
-        return (uint64_t)-1; /* EBADF：当前只认 1/2，fd 表以后再接 */
     if (len == 0)
         return 0;
     if (!user_mem_ok(ubuf, len))
         return (uint64_t)-1;
 
-    fb_console_write(p, len);
-    return len;
+    f = fd_get((int)fd);
+    if (f == NULL)
+        return (uint64_t)-1; /* EBADF */
+
+    /* vfs 层已按 O_RDONLY/O_WRONLY 做方向校验 */
+    n = vfs_write(f, (const void *)(uintptr_t)ubuf, len);
+    if (n < 0)
+        return (uint64_t)-1;
+    return (uint64_t)n;
 }
 
 static uint64_t do_sys_exit(uint64_t code, uint64_t dummy1, uint64_t dummy2)
@@ -96,17 +104,26 @@ static uint64_t do_sys_sleep(uint64_t ms, uint64_t dummy1, uint64_t dummy2)
 
 static uint64_t do_sys_read(uint64_t fd, uint64_t ubuf, uint64_t len)
 {
+    vfs_file_t *f;
     int64_t n;
 
-    if (fd != 0)
-        return (uint64_t)-1; /* 当前仅支持 fd=0（键盘） */
     if (len == 0)
         return 0;
     if (!user_mem_ok(ubuf, len))
         return (uint64_t)-1;
 
-    /* 阻塞直到有数据；返回实际字节数（允许短于 len），<0 出错 */
-    n = kbd_read_blocking((void *)(uintptr_t)ubuf, len);
+    f = fd_get((int)fd);
+    if (f == NULL)
+        return (uint64_t)-1; /* EBADF */
+
+    /* 阻塞语义：AGAIN 时 yield 重试，其余错误直接回 -1 */
+    for (;;)
+    {
+        n = vfs_read(f, (void *)(uintptr_t)ubuf, len);
+        if (n != VFS_ERR_AGAIN)
+            break;
+        yield();
+    }
     if (n < 0)
         return (uint64_t)-1;
     return (uint64_t)n;

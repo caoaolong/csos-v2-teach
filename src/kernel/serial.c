@@ -106,6 +106,21 @@ static const vdev_char_ops_t g_ttyS0_ops = {
     .write = ttyS0_write,
 };
 
+void serial_write_raw(const void *buf, uint64_t len)
+{
+    const uint8_t *p = (const uint8_t *)buf;
+    uint64_t i;
+    uint64_t flags;
+
+    if (buf == NULL || len == 0)
+        return;
+
+    flags = spin_lock_irqsave(&g_serial_lock);
+    for (i = 0; i < len; i++)
+        serial_putchar((char)p[i]);
+    spin_unlock_irqrestore(&g_serial_lock, flags);
+}
+
 static vdev_t g_ttyS0 = {
     .name = "ttyS0",
     .type = VDEV_CHAR,

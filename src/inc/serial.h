@@ -12,4 +12,6 @@ int fput_string(const char *fmt, ...);
 
 void init_serial_dev();
 
+void serial_write_raw(const void *buf, uint64_t len);
+
 #endif /* SERIAL_H */
