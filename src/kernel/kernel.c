@@ -30,6 +30,7 @@
 #include <part/part.h>
 #include <fs/mount.h>
 #include <config.h>
+#include <fd.h>
 
 static void user_task()
 {
@@ -78,6 +79,7 @@ void kernel_main(boot_info_t *boot_info)
     init_devices();
     init_partitions();
     init_mounts();
+    init_fd();
 
     if (task_create_pinned(user_task, "user") == NULL)
         panic("FATAL: user task_create failed\n");
