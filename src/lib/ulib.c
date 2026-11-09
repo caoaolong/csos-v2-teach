@@ -1,4 +1,4 @@
-#include <user.h>
+#include <abi.h>
 #include "unistd.h"
 
 static long syscall1(long num, long arg)
@@ -35,6 +35,12 @@ static long syscall3(long num, long a, long b, long c)
 long write(int fd, const void *buf, unsigned long len)
 {
     return syscall3(SYS_WRITE, (long)fd, (long)buf, (long)len);
+}
+
+/* 读 fd=0（键盘）：返回实际字节数，阻塞直到有数据；<0 出错 */
+long read(int fd, void *buf, unsigned long len)
+{
+    return syscall3(SYS_READ, (long)fd, (long)buf, (long)len);
 }
 
 /* 结束当前任务（v1：停住不返回） */

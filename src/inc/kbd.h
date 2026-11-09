@@ -14,4 +14,6 @@ void handler_kbd(exception_frame_t *frame);
 
 void init_kbd_dev();
 
+int64_t kbd_read_blocking(void *buf, uint64_t len);
+
 #endif /* CSOS_KBD_H */

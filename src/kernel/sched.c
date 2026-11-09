@@ -328,6 +328,38 @@ void sched_sleep_jiffies(uint64_t jf)
     yield();
 }
 
+void sched_block()
+{
+    uint64_t flags;
+    task_t *cur;
+
+    cur = sched_current();
+    if (cur == NULL || cur->is_idle)
+        return;
+
+    flags = spin_lock_irqsave(&g_sched_lock);
+    cur->state = TASK_BLOCKED;
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+}
+
+void sched_unblock(task_t *t)
+{
+    uint64_t flags;
+
+    if (t == NULL || t->is_idle)
+        return;
+
+    flags = spin_lock_irqsave(&g_sched_lock);
+    if (t->state == TASK_BLOCKED)
+    {
+        t->state = TASK_READY;
+        /* 仍在某核上运行时只改状态，由该核 schedule 时再入队 */
+        if (!t->on_cpu)
+            ready_enqueue((unsigned)t->cpu, t);
+    }
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+}
+
 uint64_t schedule_from_irq(exception_frame_t *frame)
 {
     unsigned cpu;
