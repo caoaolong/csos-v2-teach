@@ -4,7 +4,8 @@
 #include <serial.h>
 #include <syscall.h>
 #include <timer.h>
-#include <user.h>
+#include <abi.h> /* SYS_*：内核↔用户态共识的调用号 */
+#include <kbd.h>
 #include <gfx/console.h>
 
 #define MSR_EFER 0xC0000080
@@ -63,7 +64,8 @@ static uint64_t do_sys_write(uint64_t fd, uint64_t ubuf, uint64_t len)
 {
     const void *p = (const void *)(uintptr_t)ubuf;
 
-    (void)fd;
+    if (fd != STDOUT_FILENO && fd != STDERR_FILENO)
+        return (uint64_t)-1; /* EBADF：当前只认 1/2，fd 表以后再接 */
     if (len == 0)
         return 0;
     if (!user_mem_ok(ubuf, len))
@@ -92,12 +94,31 @@ static uint64_t do_sys_sleep(uint64_t ms, uint64_t dummy1, uint64_t dummy2)
     return 0;
 }
 
+static uint64_t do_sys_read(uint64_t fd, uint64_t ubuf, uint64_t len)
+{
+    int64_t n;
+
+    if (fd != 0)
+        return (uint64_t)-1; /* 当前仅支持 fd=0（键盘） */
+    if (len == 0)
+        return 0;
+    if (!user_mem_ok(ubuf, len))
+        return (uint64_t)-1;
+
+    /* 阻塞直到有数据；返回实际字节数（允许短于 len），<0 出错 */
+    n = kbd_read_blocking((void *)(uintptr_t)ubuf, len);
+    if (n < 0)
+        return (uint64_t)-1;
+    return (uint64_t)n;
+}
+
 typedef uint64_t (*sys_fn_t)(uint64_t rdi, uint64_t rsi, uint64_t rdx);
 
-static const sys_fn_t g_sys_table[SYS_SLEEP + 1] = {
+static const sys_fn_t g_sys_table[SYS_READ + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
+    [SYS_READ] = do_sys_read,
 };
 
 void handler_syscall(exception_frame_t *frame)
@@ -105,7 +126,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_SLEEP || g_sys_table[num] == NULL)
+    if (num > SYS_READ || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);

@@ -7,6 +7,7 @@
 #include <spinlock.h>
 #include <string.h>
 #include <vdev.h>
+#include <sched.h>
 
 #define KBD_DATA 0x60
 #define KBD_STATUS 0x64
@@ -28,6 +29,7 @@ static uint32_t g_kbd_head;
 static uint32_t g_kbd_tail;
 static uint32_t g_kbd_count;
 static spinlock_t g_kbd_lock = SPINLOCK_INIT;
+static task_t *g_kbd_waiter = NULL;
 
 /* Set1 make → ASCII；0 表示忽略（含 break 由调用方过滤） */
 static const char g_set1_map[128] = {
@@ -130,7 +132,7 @@ void handler_kbd(exception_frame_t *frame)
 {
     uint8_t sc;
     char ch;
-    char buf[2];
+    task_t *w;
 
     (void)frame;
 
@@ -155,10 +157,12 @@ void handler_kbd(exception_frame_t *frame)
                 g_kbd_tail = (g_kbd_tail + 1) % KBD_BUF_SIZE;
                 g_kbd_count++;
             }
+            /* 缓冲满则丢弃新字符；回显由用户态 shell 负责，这里不再输出 */
+            w = g_kbd_waiter;
+            g_kbd_waiter = NULL;
+            if (w != NULL)
+                sched_unblock(w);
             spin_unlock_irqrestore(&g_kbd_lock, flags);
-            buf[0] = ch;
-            buf[1] = '\0';
-            put_string(buf);
         }
     }
 
@@ -212,6 +216,40 @@ static int64_t kbd0_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
     spin_unlock_irqrestore(&g_kbd_lock, flags);
 
     return n ? (int64_t)n : VFS_ERR_AGAIN;
+}
+
+int64_t kbd_read_blocking(void *buf, uint64_t len)
+{
+    uint8_t *p = (uint8_t *)buf;
+
+    if (buf == NULL || len == 0)
+        return 0;
+
+    for (;;)
+    {
+        uint64_t n = 0;
+        uint64_t flags = spin_lock_irqsave(&g_kbd_lock);
+
+        while (n < len && g_kbd_count > 0)
+        {
+            p[n++] = (uint8_t)g_kbd_buf[g_kbd_head];
+            g_kbd_head = (g_kbd_head + 1) % KBD_BUF_SIZE;
+            g_kbd_count--;
+        }
+        if (n > 0)
+        {
+            spin_unlock_irqrestore(&g_kbd_lock, flags);
+            return (int64_t)n;
+        }
+
+        /* 单用户任务：直接覆盖等待位（唤醒时已清零，不会残留） */
+        g_kbd_waiter = sched_current();
+        sched_block();
+        spin_unlock_irqrestore(&g_kbd_lock, flags);
+
+        /* 被 sched_unblock 唤醒后回来重查；yield 不持任何锁 */
+        yield();
+    }
 }
 
 static int64_t kbd0_write(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t len)

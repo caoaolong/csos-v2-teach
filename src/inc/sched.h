@@ -11,6 +11,7 @@ typedef enum task_state
 {
     TASK_READY = 0,
     TASK_SLEEPING,
+    TASK_BLOCKED, /* 等待外部事件（如键盘），由事件源显式唤醒 */
 } task_state_t;
 
 typedef struct task
@@ -46,9 +47,13 @@ task_t *task_create(void (*entry)(void), const char *name);
 
 task_t *task_create_pinned(void (*entry)(void), const char *name);
 
-void sched_wake_sleepers(void);
+void sched_wake_sleepers();
 
 void sched_sleep_jiffies(uint64_t jf);
+
+void sched_block();
+
+void sched_unblock(task_t *t);
 
 uint64_t schedule_from_irq(exception_frame_t *frame);
 
