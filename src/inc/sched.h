@@ -3,6 +3,7 @@
 
 #include <idt.h>
 #include <stdint.h>
+#include <fd.h>
 
 /* 协作式 yield：软件中断，与 timer 共用 exception_frame 切换路径 */
 #define SCHED_YIELD_VECTOR 34
@@ -29,6 +30,7 @@ typedef struct task
     uint8_t is_idle;       /* per-CPU idle，不进就绪队列 */
     uint8_t pinned;        /* 绑定 CPU：不允许被其他核窃取（用户任务用） */
     uint8_t cpu;           /* 所属就绪队列的 apic_id（最后运行核） */
+    fd_entry_t *fds[FD_MAX]; /* 本任务 fd 表（NULL=空闲；共享描述引用计数） */
 } task_t;
 
 /* 当前 CPU 正在运行的任务（per-CPU） */
