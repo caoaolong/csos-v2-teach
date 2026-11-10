@@ -34,6 +34,8 @@
 
 static void user_task()
 {
+    /* 当前任务即 user 任务：先装好 0/1/2 再进用户态 */
+    fd_init_std(sched_current());
     user_enter_init(g_boot_config.init);
     /* user_enter_* 不返回；防御性兜底 */
     for (;;)
@@ -79,7 +81,6 @@ void kernel_main(boot_info_t *boot_info)
     init_devices();
     init_partitions();
     init_mounts();
-    init_fd();
 
     if (task_create_pinned(user_task, "user") == NULL)
         panic("FATAL: user task_create failed\n");

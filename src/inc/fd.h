@@ -5,10 +5,30 @@
 
 #define FD_MAX 16
 
-/* 全局 fd 表（单用户任务过渡；多任务后再搬进 task_t） */
-void init_fd();
+struct task;
 
-/* 取 fd 对应的打开文件描述；无效返回 NULL */
+/* 打开文件描述：多 fd 可共享（dup2），refs 做引用计数 */
+struct fd_entry
+{
+    vfs_file_t *vf;
+    int refs;
+};
+
+typedef struct fd_entry fd_entry_t;
+
+/* 为任务预开 0/1/2 标准流（独立 open，1/2 可分别重定向） */
+void fd_init_std(struct task *t);
+
+/* 当前任务 fd -> vfs 句柄；无效返回 NULL（调用期间持有者不得 close，多任务后需 get/put） */
 vfs_file_t *fd_get(int fd);
+
+/* 安装已 open 的 vfs 句柄到当前任务最小空闲 fd；失败返回 -1（EMFILE/NOMEM） */
+int fd_install(vfs_file_t *vf);
+
+/* 关闭当前任务的 fd；成功返回 VFS_OK */
+int fd_close(int fd);
+
+/* oldfd 共享到 newfd（同描述、共享 offset）；成功返回 newfd，失败返回 -1 */
+int fd_dup2(int oldfd, int newfd);
 
 #endif /* CSOS_FD_H */

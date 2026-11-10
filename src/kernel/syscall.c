@@ -129,13 +129,95 @@ static uint64_t do_sys_read(uint64_t fd, uint64_t ubuf, uint64_t len)
     return (uint64_t)n;
 }
 
+/* 用户路径逐字节拷入内核栈缓冲（带越界检查），要求 NUL 结尾 */
+static int copy_path_from_user(uint64_t upath, char *kpath, uint32_t cap)
+{
+    uint32_t i;
+
+    for (i = 0; i < cap; i++)
+    {
+        if (!user_mem_ok(upath + i, 1))
+            return -1;
+        kpath[i] = *(const char *)(uintptr_t)(upath + i);
+        if (kpath[i] == '\0')
+            break;
+    }
+    if (i >= cap)
+        return -1; /* 无 NUL：ENAMETOOLONG */
+    if (i == 0)
+        return -1; /* 空路径 */
+    return 0;
+}
+
+static uint64_t do_sys_open(uint64_t upath, uint64_t flags, uint64_t mode)
+{
+    char kpath[VFS_PATH_MAX];
+    vfs_file_t *vf = NULL;
+    int fd;
+    int rc;
+
+    (void)mode; /* 保留：vfs_open 暂无 mode 参数，CREAT 用默认权限 */
+
+    if (copy_path_from_user(upath, kpath, (uint32_t)sizeof(kpath)) != 0)
+        return (uint64_t)-1;
+
+    rc = vfs_open(kpath, (int)flags, &vf);
+    if (rc != VFS_OK)
+        return (uint64_t)-1;
+    fd = fd_install(vf);
+    if (fd < 0)
+    {
+        vfs_close(vf);
+        return (uint64_t)-1; /* EMFILE/NOMEM */
+    }
+    return (uint64_t)fd;
+}
+
+static uint64_t do_sys_close(uint64_t fd, uint64_t dummy1, uint64_t dummy2)
+{
+    (void)dummy1;
+    (void)dummy2;
+    if (fd_close((int)fd) != VFS_OK)
+        return (uint64_t)-1; /* EBADF */
+    return 0;
+}
+
+static uint64_t do_sys_dup2(uint64_t oldfd, uint64_t newfd, uint64_t dummy)
+{
+    int r;
+
+    (void)dummy;
+    r = fd_dup2((int)oldfd, (int)newfd);
+    if (r < 0)
+        return (uint64_t)-1; /* EBADF */
+    return (uint64_t)r;
+}
+
+static uint64_t do_sys_lseek(uint64_t fd, uint64_t off, uint64_t whence)
+{
+    vfs_file_t *f;
+    int64_t n;
+
+    f = fd_get((int)fd);
+    if (f == NULL)
+        return (uint64_t)-1; /* EBADF */
+    n = vfs_seek(f, (int64_t)off, (int)whence);
+    if (n < 0)
+        return (uint64_t)-1;
+    return (uint64_t)n;
+}
+
 typedef uint64_t (*sys_fn_t)(uint64_t rdi, uint64_t rsi, uint64_t rdx);
 
-static const sys_fn_t g_sys_table[SYS_READ + 1] = {
+static const sys_fn_t g_sys_table[SYS_LSEEK + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
     [SYS_READ] = do_sys_read,
+    [SYS_OPEN] = do_sys_open,
+    [SYS_CLOSE] = do_sys_close,
+    [SYS_DUP2] = do_sys_dup2,
+    [SYS_LSEEK] = do_sys_lseek,
 };
 
 void handler_syscall(exception_frame_t *frame)
@@ -143,7 +225,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_READ || g_sys_table[num] == NULL)
+    if (num > SYS_LSEEK || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);
