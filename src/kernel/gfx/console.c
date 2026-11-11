@@ -1,11 +1,11 @@
-#include <gfx/console.h>
-#include <gfx/fb.h>
-#include <gfx/font.h>
-#include <gfx/logo.h>
-#include <gfx/layout.h>
-#include <memory/heap.h>
-#include <spinlock.h>
-#include <timer.h>
+#include <kernel/gfx/console.h>
+#include <kernel/gfx/fb.h>
+#include <kernel/gfx/font.h>
+#include <kernel/gfx/logo.h>
+#include <kernel/gfx/layout.h>
+#include <kernel/memory/heap.h>
+#include <kernel/spinlock.h>
+#include <kernel/timer.h>
 
 #define CON_FG_RGB 0xE8E8E8U
 #define CON_TAB_STOP 8

@@ -1,7 +1,7 @@
 #ifndef CSOS_SPINLOCK_H
 #define CSOS_SPINLOCK_H
 
-#include <cpu.h>
+#include <kernel/cpu.h>
 #include <stdint.h>
 
 typedef struct spinlock

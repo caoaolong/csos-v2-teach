@@ -1,9 +1,9 @@
 #ifndef CSOS_SCHED_H
 #define CSOS_SCHED_H
 
-#include <idt.h>
+#include <kernel/idt.h>
 #include <stdint.h>
-#include <fd.h>
+#include <kernel/fd.h>
 
 /* 协作式 yield：软件中断，与 timer 共用 exception_frame 切换路径 */
 #define SCHED_YIELD_VECTOR 34

@@ -1,8 +1,8 @@
-#include <dev/timer_dev.h>
-#include <serial.h>
-#include <string.h>
-#include <timer.h>
-#include <vdev.h>
+#include <kernel/dev/timer_dev.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
+#include <kernel/timer.h>
+#include <kernel/vdev.h>
 
 static int64_t uptime_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
 {

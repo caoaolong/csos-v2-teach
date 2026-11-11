@@ -1,8 +1,8 @@
 #ifndef CSOS_FS_RAMFS_H
 #define CSOS_FS_RAMFS_H
 
-#include <fs/vfs.h>
-#include <spinlock.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/spinlock.h>
 
 #define RAMFS_DEF_CAP 512
 

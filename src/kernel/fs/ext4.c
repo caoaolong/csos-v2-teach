@@ -1,8 +1,8 @@
-#include <fs/ext4.h>
-#include <vdev.h>
-#include <memory/heap.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/fs/ext4.h>
+#include <kernel/vdev.h>
+#include <kernel/memory/heap.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 #define EXT4_MAGIC 0xef53u
 #define EXT4_EH_MAGIC 0xf30au

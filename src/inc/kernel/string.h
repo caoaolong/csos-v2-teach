@@ -1,7 +1,7 @@
 #ifndef CSOS_STRING_H
 #define CSOS_STRING_H
 
-#include <kernel.h>
+#include <kernel/kernel.h>
 
 void kernel_strcpy(char *dst, const char *src);
 

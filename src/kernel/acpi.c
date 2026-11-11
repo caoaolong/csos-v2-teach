@@ -1,7 +1,7 @@
-#include <acpi.h>
-#include <serial.h>
-#include <panic.h>
-#include <string.h>
+#include <kernel/acpi.h>
+#include <kernel/serial.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
 
 enum
 {

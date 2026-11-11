@@ -1,7 +1,7 @@
 #ifndef CSOS_FS_DEVFS_H
 #define CSOS_FS_DEVFS_H
 
-#include <fs/vfs.h>
+#include <kernel/fs/vfs.h>
 
 extern const fs_driver_t devfs_driver;
 

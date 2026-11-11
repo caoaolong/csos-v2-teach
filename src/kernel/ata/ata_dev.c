@@ -1,7 +1,7 @@
-#include <ata/ata.h>
-#include <vdev.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/ata/ata.h>
+#include <kernel/vdev.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 static uint8_t g_hd_drive[ATA_MAX_DRIVES];
 static vdev_t g_hd[ATA_MAX_DRIVES];

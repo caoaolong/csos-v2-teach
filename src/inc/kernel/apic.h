@@ -2,7 +2,7 @@
 #define CSOS_APIC_H
 
 #include <stdint.h>
-#include <acpi.h>
+#include <kernel/acpi.h>
 
 #define APIC_TIMER_VECTOR 32
 #define APIC_SPURIOUS_VECTOR 0xFF

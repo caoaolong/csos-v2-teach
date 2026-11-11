@@ -1,6 +1,6 @@
-#include <memory/pmm_allocator.h>
-#include <memory/bitmap.h>
-#include <memory/pmm.h>
+#include <kernel/memory/pmm_allocator.h>
+#include <kernel/memory/bitmap.h>
+#include <kernel/memory/pmm.h>
 
 /* 管理上限：512MB（QEMU 默认 128MB，bitmap 约 16KB） */
 #define PMM_MAX_PHYS (512ULL * 1024 * 1024)

@@ -1,12 +1,12 @@
-#include <sched.h>
-#include <memory/heap.h>
-#include <memory/pmm.h>
-#include <string.h>
-#include <serial.h>
-#include <gdt.h>
-#include <apic.h>
-#include <timer.h>
-#include <spinlock.h>
+#include <kernel/sched.h>
+#include <kernel/memory/heap.h>
+#include <kernel/memory/pmm.h>
+#include <kernel/string.h>
+#include <kernel/serial.h>
+#include <kernel/gdt.h>
+#include <kernel/apic.h>
+#include <kernel/timer.h>
+#include <kernel/spinlock.h>
 
 /* Local APIC ID 为 8 位 */
 #define SCHED_MAX_CPUS 256

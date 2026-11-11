@@ -1,8 +1,8 @@
-#include <config.h>
-#include <memory/pmm_allocator.h>
-#include <ata/ata.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/config.h>
+#include <kernel/memory/pmm_allocator.h>
+#include <kernel/ata/ata.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 boot_config_t g_boot_config;
 

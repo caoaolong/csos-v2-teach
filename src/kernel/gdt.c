@@ -1,6 +1,6 @@
-#include <tss.h>
-#include <gdt.h>
-#include <string.h>
+#include <kernel/tss.h>
+#include <kernel/gdt.h>
+#include <kernel/string.h>
 
 static tss64_t g_tss;
 

@@ -1,7 +1,7 @@
 #ifndef CSOS_GFX_FB_H
 #define CSOS_GFX_FB_H
 
-#include <memory/pmm.h>
+#include <kernel/memory/pmm.h>
 #include <stdint.h>
 
 /* XRGB(0x00RRGGBB) 按显存格式打包成 32 位像素值 */

@@ -1,7 +1,7 @@
 #ifndef CSOS_IDT_H
 #define CSOS_IDT_H
 
-#include <kernel.h>
+#include <kernel/kernel.h>
 
 #define IDT_SIZE 0x100
 

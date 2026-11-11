@@ -1,4 +1,4 @@
-#include <gfx/font.h>
+#include <kernel/gfx/font.h>
 
 /*
  * Terminus Font 16px normal (ter-116n)，8x16 点阵，覆盖 ASCII 0x20..0x7E。

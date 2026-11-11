@@ -1,9 +1,9 @@
-#include <apic/ioapic.h>
-#include <acpi.h>
-#include <memory/pmm.h>
-#include <memory/vmm.h>
-#include <serial.h>
-#include <panic.h>
+#include <kernel/apic/ioapic.h>
+#include <kernel/acpi.h>
+#include <kernel/memory/pmm.h>
+#include <kernel/memory/vmm.h>
+#include <kernel/serial.h>
+#include <kernel/panic.h>
 
 #define IOAPIC_REGSEL 0x00
 #define IOAPIC_WINDOW 0x10

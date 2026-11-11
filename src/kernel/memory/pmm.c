@@ -1,6 +1,6 @@
-#include <memory/pmm.h>
-#include <memory/pmm_allocator.h>
-#include <serial.h>
+#include <kernel/memory/pmm.h>
+#include <kernel/memory/pmm_allocator.h>
+#include <kernel/serial.h>
 
 extern uint8_t __bootstrap_start[];
 extern uint8_t __kernel_phys_end[];

@@ -1,6 +1,6 @@
-#include <vdev.h>
-#include <spinlock.h>
-#include <string.h>
+#include <kernel/vdev.h>
+#include <kernel/spinlock.h>
+#include <kernel/string.h>
 
 static vdev_t *g_devs;
 static vdev_listener_t *g_listeners;

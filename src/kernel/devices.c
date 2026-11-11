@@ -1,10 +1,10 @@
-#include <devices.h>
-#include <serial.h>
-#include <ata/ata_dev.h>
-#include <kbd.h>
-#include <dev/mem_dev.h>
-#include <dev/timer_dev.h>
-#include <dev/console_dev.h>
+#include <kernel/devices.h>
+#include <kernel/serial.h>
+#include <kernel/ata/ata_dev.h>
+#include <kernel/kbd.h>
+#include <kernel/dev/mem_dev.h>
+#include <kernel/dev/timer_dev.h>
+#include <kernel/dev/console_dev.h>
 
 void init_devices()
 {

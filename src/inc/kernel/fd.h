@@ -1,7 +1,7 @@
 #ifndef CSOS_FD_H
 #define CSOS_FD_H
 
-#include <fs/vfs.h>
+#include <kernel/fs/vfs.h>
 
 #define FD_MAX 16
 

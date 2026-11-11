@@ -1,6 +1,6 @@
-#include <memory/pmm.h>
-#include <memory/vmm.h>
-#include <kernel_layout.h>
+#include <kernel/memory/pmm.h>
+#include <kernel/memory/vmm.h>
+#include <kernel/kernel_layout.h>
 #include <stdint.h>
 #include <stddef.h>
 

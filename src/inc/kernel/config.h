@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <memory/pmm.h>
+#include <kernel/memory/pmm.h>
 
 #define BOOT_CONFIG_MAX_MOUNTS 6
 #define BOOT_CONFIG_DEV_MAX 32

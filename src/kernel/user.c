@@ -1,16 +1,16 @@
-#include <user.h>
-#include <elf.h>
-#include <memory/pmm.h>
-#include <memory/vmm.h>
-#include <memory/heap.h>
-#include <serial.h>
-#include <panic.h>
-#include <string.h>
-#include <syscall.h>
-#include <tss.h>
-#include <gfx/console.h>
-#include <fs/vfs.h>
-#include <kernel_layout.h>
+#include <kernel/user.h>
+#include <kernel/elf.h>
+#include <kernel/memory/pmm.h>
+#include <kernel/memory/vmm.h>
+#include <kernel/memory/heap.h>
+#include <kernel/serial.h>
+#include <kernel/panic.h>
+#include <kernel/string.h>
+#include <kernel/syscall.h>
+#include <kernel/tss.h>
+#include <kernel/gfx/console.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/kernel_layout.h>
 
 extern void enter_user(uint64_t rip, uint64_t rsp);
 
@@ -366,4 +366,125 @@ void user_enter_init(const char *init_path)
                 init_path, (unsigned long long)entry,
                 (unsigned long long)file_size);
     setup_kstack_and_enter(entry);
+}
+
+/* 栈预算：字符串 + 指针表必须容纳进一页，留白给对齐 */
+#define EXEC_STACK_BUDGET (PAGE_SIZE - 512)
+
+/* bounded strlen：上限 VFS_PATH_MAX（含 NUL），超限返回 VFS_PATH_MAX */
+static uint64_t exec_arg_len(const char *s)
+{
+    uint64_t n = 0;
+
+    if (s == NULL)
+        return (uint64_t)VFS_PATH_MAX;
+    while (n < (uint64_t)VFS_PATH_MAX && s[n] != '\0')
+        n++;
+    return n >= (uint64_t)VFS_PATH_MAX ? (uint64_t)VFS_PATH_MAX : n + 1;
+}
+
+static int exec_args_fit(char *const kargv[], int kargc,
+                         char *const kenvp[], int kenvc)
+{
+    uint64_t total = (uint64_t)(kargc + kenvc + 3) * 8ULL;
+    int i;
+
+    for (i = 0; i < kargc; i++)
+    {
+        total += exec_arg_len(kargv[i]);
+        if (total > EXEC_STACK_BUDGET)
+            return -1;
+    }
+    for (i = 0; i < kenvc; i++)
+    {
+        total += exec_arg_len(kenvp[i]);
+        if (total > EXEC_STACK_BUDGET)
+            return -1;
+    }
+    return 0;
+}
+
+/* 新栈 SysV 布局：[argc][argv..][NULL][envp..][NULL][strings]，返回用户 rsp（16 对齐） */
+static uint64_t exec_setup_stack(void *stack_page, char *const kargv[], int kargc,
+                                 char *const kenvp[], int kenvc)
+{
+    uint8_t *sp = (uint8_t *)stack_page + PAGE_SIZE;
+    uint64_t uaddr[EXEC_MAX_ARGS];
+    uint64_t eaddr[EXEC_MAX_ARGS];
+    uint64_t *dp;
+    int i;
+
+    for (i = 0; i < kargc; i++)
+    {
+        uint64_t n = exec_arg_len(kargv[i]);
+
+        sp -= n;
+        raw_copy(sp, (const uint8_t *)kargv[i], n);
+        uaddr[i] = USER_STACK_TOP - (uint64_t)((uint8_t *)stack_page + PAGE_SIZE - sp);
+    }
+    for (i = 0; i < kenvc; i++)
+    {
+        uint64_t n = exec_arg_len(kenvp[i]);
+
+        sp -= n;
+        raw_copy(sp, (const uint8_t *)kenvp[i], n);
+        eaddr[i] = USER_STACK_TOP - (uint64_t)((uint8_t *)stack_page + PAGE_SIZE - sp);
+    }
+    sp = (uint8_t *)(((uintptr_t)sp - (uint64_t)(kargc + kenvc + 3) * 8ULL) & ~15ULL);
+    dp = (uint64_t *)sp;
+    dp[0] = (uint64_t)kargc;
+    for (i = 0; i < kargc; i++)
+        dp[1 + i] = uaddr[i];
+    dp[1 + kargc] = 0;
+    for (i = 0; i < kenvc; i++)
+        dp[2 + kargc + i] = eaddr[i];
+    dp[2 + kargc + kenvc] = 0;
+    return USER_STACK_VADDR + (uint64_t)(sp - (uint8_t *)stack_page);
+}
+
+int user_exec_replace(const char *kpath, char *const kargv[], int kargc,
+                      char *const kenvp[], int kenvc,
+                      uint64_t *entry_out, uint64_t *rsp_out)
+{
+    uint8_t *img = NULL;
+    uint64_t file_size = 0;
+    uint64_t entry;
+    void *stack_page;
+
+    if (kpath == NULL || kpath[0] == '\0' || entry_out == NULL || rsp_out == NULL)
+        return -1;
+    if (kargc < 0 || kargc > EXEC_MAX_ARGS || kenvc < 0 || kenvc > EXEC_MAX_ARGS)
+        return -1;
+    if ((kargc > 0 && kargv == NULL) || (kenvc > 0 && kenvp == NULL))
+        return -1;
+    if (exec_args_fit(kargv, kargc, kenvp, kenvc) != 0)
+        return -1;
+    if (load_file_to_mem(kpath, &img, &file_size) != 0)
+        return -1;
+    if (check_ehdr((const elf64_ehdr_t *)img, file_size) != 0)
+    {
+        kfree(img);
+        return -1;
+    }
+
+    /* 自此旧映像销毁：失败即 FATAL，不再返回原程序 */
+    fput_string("[USER] exec '%s'\n", kpath);
+    unmap_user_range(USER_IMAGE_BASE, USER_IMAGE_END);
+
+    entry = map_elf_image(img, file_size);
+    kfree(img);
+    if (entry == 0)
+        user_halt("FATAL: exec map image failed\n");
+
+    stack_page = (void *)alloc_page();
+    if (stack_page == NULL)
+        user_halt("FATAL: exec stack alloc failed\n");
+    kernel_memset(stack_page, 0, (uint32_t)PAGE_SIZE);
+    if (map_page(USER_STACK_VADDR, (uint64_t)(uintptr_t)stack_page,
+                 PTE_PRESENT | PTE_WRITABLE | PTE_USER) != 0)
+        user_halt("FATAL: exec map stack failed\n");
+
+    *entry_out = entry;
+    *rsp_out = exec_setup_stack(stack_page, kargv, kargc, kenvp, kenvc);
+    return 0;
 }

@@ -1,6 +1,6 @@
-#include <gfx/fb.h>
-#include <gfx/layout.h>
-#include <serial.h>
+#include <kernel/gfx/fb.h>
+#include <kernel/gfx/layout.h>
+#include <kernel/serial.h>
 
 /* EFI_GRAPHICS_PIXEL_FORMAT */
 #define FB_PIXEL_RGB 0 /* byte order R,G,B,X */

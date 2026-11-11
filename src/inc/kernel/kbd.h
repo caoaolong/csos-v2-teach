@@ -1,8 +1,8 @@
 #ifndef CSOS_KBD_H
 #define CSOS_KBD_H
 
-#include <idt.h>
-#include <apic/ioapic.h>
+#include <kernel/idt.h>
+#include <kernel/apic/ioapic.h>
 
 #define KBD_ISA_IRQ 1
 #define KBD_VECTOR (IOAPIC_IRQ_BASE + KBD_ISA_IRQ)

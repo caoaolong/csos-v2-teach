@@ -1,7 +1,7 @@
 #ifndef CSOS_GFX_CONSOLE_H
 #define CSOS_GFX_CONSOLE_H
 
-#include <memory/pmm.h>
+#include <kernel/memory/pmm.h>
 #include <stdint.h>
 
 void fb_console_init_boot(boot_info_t *boot);

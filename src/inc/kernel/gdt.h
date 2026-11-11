@@ -1,7 +1,7 @@
 #ifndef CSOS_GDT_H
 #define CSOS_GDT_H
 
-#include <kernel.h>
+#include <kernel/kernel.h>
 
 #define GDT_TSS_BASE_INDEX 6
 #define GDT_TSS_MAX_CPUS 256

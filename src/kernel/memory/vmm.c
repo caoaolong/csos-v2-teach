@@ -1,7 +1,7 @@
-#include <kernel_layout.h>
-#include <memory/vmm.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/kernel_layout.h>
+#include <kernel/memory/vmm.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 #define ENTRIES_PER_TABLE 512
 
@@ -161,6 +161,53 @@ int map_page(uint64_t vaddr, uint64_t paddr, uint64_t flags)
     pt[i1] = (paddr & PTE_ADDR_MASK) | flags;
     invlpg(vaddr);
     return 0;
+}
+
+/* 拆除 [start, end) 内 4K 用户页映射并归还物理页，exec 替换映像前调用。
+ * 只动 leaf 且 PTE_USER 置位的表项；页表页本身暂不回收（exec 低频）。 */
+void unmap_user_range(uint64_t start, uint64_t end)
+{
+    uint64_t va;
+
+    if (kernel_pml4 == NULL)
+        return;
+    start &= ~(PAGE_SIZE - 1);
+    for (va = start; va < end; va += PAGE_SIZE)
+    {
+        uint64_t pml4e = kernel_pml4[(va >> 39) & 0x1FF];
+        uint64_t *pdpt;
+        uint64_t pdpte;
+        uint64_t *pd;
+        uint64_t pde;
+        uint64_t *pt;
+        uint64_t e;
+
+        if (va + PAGE_SIZE < va)
+            break; /* 回绕 */
+        if (!(pml4e & PTE_PRESENT) || (pml4e & PTE_HUGE))
+            continue;
+        pdpt = table_from_entry(pml4e);
+        if (pdpt == NULL)
+            continue;
+        pdpte = pdpt[(va >> 30) & 0x1FF];
+        if (!(pdpte & PTE_PRESENT) || (pdpte & PTE_HUGE))
+            continue;
+        pd = table_from_entry(pdpte);
+        if (pd == NULL)
+            continue;
+        pde = pd[(va >> 21) & 0x1FF];
+        if (!(pde & PTE_PRESENT) || (pde & PTE_HUGE))
+            continue;
+        pt = table_from_entry(pde);
+        if (pt == NULL)
+            continue;
+        e = pt[(va >> 12) & 0x1FF];
+        if (!(e & PTE_PRESENT) || !(e & PTE_USER) || (e & PTE_HUGE))
+            continue;
+        free_page(e & PTE_ADDR_MASK);
+        pt[(va >> 12) & 0x1FF] = 0;
+        invlpg(va);
+    }
 }
 
 void init_vmm(boot_info_t *boot)

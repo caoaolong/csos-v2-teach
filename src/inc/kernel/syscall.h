@@ -1,7 +1,7 @@
 #ifndef CSOS_SYSCALL_H
 #define CSOS_SYSCALL_H
 
-#include <idt.h>
+#include <kernel/idt.h>
 
 void init_syscall();
 

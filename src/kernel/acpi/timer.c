@@ -1,10 +1,10 @@
-#include <idt.h>
-#include <apic.h>
-#include <serial.h>
-#include <timer.h>
-#include <apic.h>
-#include <sched.h>
-#include <gfx/console.h>
+#include <kernel/idt.h>
+#include <kernel/apic.h>
+#include <kernel/serial.h>
+#include <kernel/timer.h>
+#include <kernel/apic.h>
+#include <kernel/sched.h>
+#include <kernel/gfx/console.h>
 
 static uint32_t g_timer_hz = APIC_TIMER_DEFAULT_HZ;
 

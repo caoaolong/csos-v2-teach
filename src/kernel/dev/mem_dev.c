@@ -1,7 +1,7 @@
-#include <dev/mem_dev.h>
-#include <serial.h>
-#include <string.h>
-#include <vdev.h>
+#include <kernel/dev/mem_dev.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
+#include <kernel/vdev.h>
 
 /* Linux 兼容次设备号：null=3，zero=5 */
 #define MEM_MINOR_NULL 3

@@ -1,10 +1,10 @@
-#include <fs/fat32.h>
-#include <fs/vfs.h>
-#include <vdev.h>
-#include <memory/heap.h>
-#include <spinlock.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/fs/fat32.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/vdev.h>
+#include <kernel/memory/heap.h>
+#include <kernel/spinlock.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 /* ===== 盘上常量 ===== */
 #define FAT32_ATTR_RO 0x01
