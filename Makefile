@@ -8,25 +8,21 @@ KERNEL_DIR = $(SRC_DIR)/kernel
 INC_DIR    = $(SRC_DIR)/inc
 BUILD_DIR  = build
 
-# 用户态 C 库：独立源码、独立归档
-LIB_DIR    = $(SRC_DIR)/lib
-LIBC_A     = $(BUILD_DIR)/lib/libc.a
-CRT0       = $(BUILD_DIR)/lib/crt0.o
-
 KERNEL     = $(BUILD_DIR)/kernel.elf
 
-# 用户程序：独立源码、独立链接（基址见 src/user/user.ld）
-USER_DIR   = $(SRC_DIR)/user
-USER_ELF   = $(BUILD_DIR)/user.elf
-USER_BIN   = $(BUILD_DIR)/user.bin
+# 用户态 C 库与各程序构建片段（变量与规则下沉到各自目录，新增服务在此追加 include）
+include $(SRC_DIR)/lib/Makefile
+include $(SRC_DIR)/init/Makefile
+include $(SRC_DIR)/services/display/Makefile
 
 CSFS       = csfs
 INIT_IMG   = qemu/DMBR.img
 INIT_PART  = 1
 INIT_DST   = /sbin/init
+DISP_DST   = /sbin/display
 
-CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -MMD -MP
-UFLAGS = -ffreestanding -mno-red-zone -fno-builtin -fno-asynchronous-unwind-tables -g -O0 -I$(LIB_DIR) -I$(USER_DIR) -I$(INC_DIR) -MMD -MP
+CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -I$(INC_DIR)/kernel -MMD -MP
+UFLAGS = -ffreestanding -mno-red-zone -fno-builtin -fno-asynchronous-unwind-tables -g -O0 -I$(LIB_DIR) -I$(INC_DIR) -MMD -MP
 
 KERNEL_SRCS_C = $(wildcard $(KERNEL_DIR)/*.c) \
                 $(wildcard $(KERNEL_DIR)/*/*.c)
@@ -36,21 +32,11 @@ KERNEL_OBJS   = $(patsubst $(SRC_DIR)/%.S,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_S)) \
                 $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_C))
 KERNEL_DEPS   = $(KERNEL_OBJS:.o=.d)
 
-USER_SRCS_S = $(wildcard $(USER_DIR)/*.S)
-USER_SRCS_C = $(wildcard $(USER_DIR)/*.c)
-USER_OBJS   = $(patsubst $(SRC_DIR)/%.S,$(BUILD_DIR)/%.o,$(USER_SRCS_S)) \
-              $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(USER_SRCS_C))
-USER_DEPS   = $(USER_OBJS:.o=.d)
-
-# libc：crt0 单独链接，其余归档进 libc.a
-LIB_SRCS_C = $(wildcard $(LIB_DIR)/*.c)
-LIBC_OBJS  = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(LIB_SRCS_C))
-LIB_DEPS   = $(LIBC_OBJS:.o=.d) $(CRT0:.o=.d)
-
-all: $(KERNEL) $(USER_ELF)
+all: $(KERNEL) $(INIT_ELF) $(DISP_ELF)
 
 -include $(KERNEL_DEPS)
--include $(USER_DEPS)
+-include $(INIT_DEPS)
+-include $(DISP_DEPS)
 -include $(LIB_DEPS)
 
 # 内核：CFLAGS（通配规则）
@@ -62,62 +48,31 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.S
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# 用户态 + libc：UFLAGS
-$(BUILD_DIR)/user/%.o: $(SRC_DIR)/user/%.S
-	mkdir -p $(dir $@)
-	$(CC) $(UFLAGS) -c -o $@ $<
+# init 二进制嵌入内核，随内核镜像一起加载
+KERNEL_OBJS += $(INIT_BLOB)
 
-$(BUILD_DIR)/user/%.o: $(SRC_DIR)/user/%.c
-	mkdir -p $(dir $@)
-	$(CC) $(UFLAGS) -c -o $@ $<
-
-$(BUILD_DIR)/lib/%.o: $(SRC_DIR)/lib/%.S
-	mkdir -p $(dir $@)
-	$(CC) $(UFLAGS) -c -o $@ $<
-
-$(BUILD_DIR)/lib/%.o: $(SRC_DIR)/lib/%.c
-	mkdir -p $(dir $@)
-	$(CC) $(UFLAGS) -c -o $@ $<
-
-# 归档 libc.a（crt0 除外，链接时排第一）
-$(LIBC_A): $(LIBC_OBJS)
-	mkdir -p $(dir $@)
-	$(AR) rcs $@ $^
-
-# 用户程序：ELF 留符号供 gdb，bin 剥离后嵌入内核
-# （crt0/libc 由 user.ld 隐入；-T 置 .o 后：ld 单遍，归档需后搜）
-$(USER_ELF): $(CRT0) $(USER_OBJS) $(LIBC_A) $(USER_DIR)/user.ld
-	mkdir -p $(dir $@)
-	$(LD) -L$(BUILD_DIR)/lib -o $@ $(USER_OBJS) -T $(USER_DIR)/user.ld
-
-$(USER_BIN): $(USER_ELF)
-	$(OBJCOPY) -O binary $< $@
-
-# user.bin → 目标文件（build 下执行，符号 _binary_user_bin_*）
-USER_BLOB  = $(BUILD_DIR)/user_blob.o
-$(USER_BLOB): $(USER_BIN)
-	mkdir -p $(dir $@)
-	cd $(BUILD_DIR) && $(LD) -r -b binary -o user_blob.o user.bin
-
-KERNEL_OBJS += $(USER_BLOB)
-
-$(KERNEL): $(KERNEL_OBJS) $(USER_BIN) $(KERNEL_DIR)/kernel.ld
+$(KERNEL): $(KERNEL_OBJS) $(INIT_BIN) $(KERNEL_DIR)/kernel.ld
 	mkdir -p $(dir $@)
 	$(LD) -T $(KERNEL_DIR)/kernel.ld -e _start -o $@ $(KERNEL_OBJS)
 
 clean:
 	rm -rf $(BUILD_DIR)
 
-master: $(KERNEL) $(USER_ELF) install-init
+master: $(KERNEL) $(INIT_ELF) $(DISP_ELF) install-init install-display
 	mkdir -p qemu/hda-contents/EFI/BOOT
 	cp -f edk2\Build\OvmfX64\NOOPT_VS2026\FV\OVMF.fd OVMF.fd
 	cp -f edk2\Build\CsosBootPkg\DEBUG_VS2026\X64\EfiBoot.efi qemu/hda-contents/EFI/BOOT/BOOTX64.EFI
 	cp -f $(KERNEL) qemu/hda-contents/kernel.elf
-	cp -f $(USER_ELF) qemu/hda-contents/user.elf
+	cp -f $(INIT_ELF) qemu/hda-contents/init.elf
+	cp -f $(DISP_ELF) qemu/hda-contents/display.elf
 
-# 将 user.elf 写入根盘 FAT32 分区，供 init=/sbin/init 加载
-install-init: $(USER_ELF)
-	$(CSFS) $(INIT_IMG) cp $(USER_ELF) $(INIT_DST) --partition $(INIT_PART) --mkdirs --overwrite
+# 将 init.elf 写入根盘 FAT32 分区，供 init=/sbin/init 加载
+install-init: $(INIT_ELF)
+	$(CSFS) $(INIT_IMG) cp $(INIT_ELF) $(INIT_DST) --partition $(INIT_PART) --mkdirs --overwrite
+
+# 将 display.elf 写入根盘，占位供后续 spawn /sbin/display 拉起
+install-display: $(DISP_ELF)
+	$(CSFS) $(INIT_IMG) cp $(DISP_ELF) $(DISP_DST) --partition $(INIT_PART) --mkdirs --overwrite
 
 # 启动qemu模拟环境
 qemu: master
