@@ -7,8 +7,8 @@ GROUP(libc.a)
 
 SECTIONS
 {
-    . = 0x40000000;
-    /* 入口 stub 固定在二进制起始处，其余代码随后 */
+    . = 0x41000000;
+    /* 与 init（0x40000000）错开基址，未来同地址空间双任务不重叠 */
     .text : { *(.text.entry) *(.text*) }
     .rodata : { *(.rodata*) }
     .data : { *(.data*) }
@@ -16,5 +16,5 @@ SECTIONS
 
     /DISCARD/ : { *(.note*) *(.comment*) *(.eh_frame*) }
 
-    ASSERT(. <= 0x40000000 + 0x1000, "user binary exceeds one page")
+    ASSERT(. <= 0x41000000 + 0x1000, "display binary exceeds one page")
 }
