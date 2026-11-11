@@ -16,5 +16,5 @@ SECTIONS
 
     /DISCARD/ : { *(.note*) *(.comment*) *(.eh_frame*) }
 
-    ASSERT(. <= 0x40000000 + 0x1000, "user binary exceeds one page")
+    ASSERT(. <= 0x40000000 + 0x1000, "init binary exceeds one page")
 }
