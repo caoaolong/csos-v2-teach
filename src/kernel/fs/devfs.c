@@ -1,10 +1,10 @@
-#include <fs/devfs.h>
-#include <vdev.h>
-#include <ata/ata.h>
-#include <memory/heap.h>
-#include <serial.h>
-#include <spinlock.h>
-#include <string.h>
+#include <kernel/fs/devfs.h>
+#include <kernel/vdev.h>
+#include <kernel/ata/ata.h>
+#include <kernel/memory/heap.h>
+#include <kernel/serial.h>
+#include <kernel/spinlock.h>
+#include <kernel/string.h>
 
 typedef struct devfs_node
 {

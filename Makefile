@@ -21,7 +21,7 @@ INIT_PART  = 1
 INIT_DST   = /sbin/init
 DISP_DST   = /sbin/display
 
-CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -I$(INC_DIR)/kernel -MMD -MP
+CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -MMD -MP
 UFLAGS = -ffreestanding -mno-red-zone -fno-builtin -fno-asynchronous-unwind-tables -g -O0 -I$(LIB_DIR) -I$(INC_DIR) -MMD -MP
 
 KERNEL_SRCS_C = $(wildcard $(KERNEL_DIR)/*.c) \

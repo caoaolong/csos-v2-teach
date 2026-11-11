@@ -1,8 +1,8 @@
-#include <fs/vfs.h>
-#include <memory/heap.h>
-#include <spinlock.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/memory/heap.h>
+#include <kernel/spinlock.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 static const fs_driver_t *g_drivers[VFS_MAX_DRIVERS];
 static int g_driver_count;

@@ -1,6 +1,6 @@
-#include <memory/heap.h>
-#include <memory/pmm.h>
-#include <serial.h>
+#include <kernel/memory/heap.h>
+#include <kernel/memory/pmm.h>
+#include <kernel/serial.h>
 #include <stdint.h>
 
 #define HEAP_MAGIC 0x48454150u /* 'HEAP' */

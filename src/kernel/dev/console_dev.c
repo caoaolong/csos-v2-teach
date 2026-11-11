@@ -1,7 +1,7 @@
-#include <dev/console_dev.h>
-#include <gfx/console.h>
-#include <serial.h>
-#include <vdev.h>
+#include <kernel/dev/console_dev.h>
+#include <kernel/gfx/console.h>
+#include <kernel/serial.h>
+#include <kernel/vdev.h>
 
 /* console：framebuffer + 串口双输出，只写设备 */
 static int64_t console_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)

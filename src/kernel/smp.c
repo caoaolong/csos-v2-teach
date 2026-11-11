@@ -1,15 +1,15 @@
-#include <acpi.h>
-#include <smp.h>
-#include <cpu.h>
-#include <apic.h>
-#include <apic/lapic.h>
-#include <serial.h>
-#include <string.h>
-#include <memory/vmm.h>
-#include <gdt.h>
-#include <idt.h>
-#include <sched.h>
-#include <syscall.h>
+#include <kernel/acpi.h>
+#include <kernel/smp.h>
+#include <kernel/cpu.h>
+#include <kernel/apic.h>
+#include <kernel/apic/lapic.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
+#include <kernel/memory/vmm.h>
+#include <kernel/gdt.h>
+#include <kernel/idt.h>
+#include <kernel/sched.h>
+#include <kernel/syscall.h>
 
 #define ACPI_LAPIC_ENABLED (1u << 0)
 #define SMP_TRAMPOLINE_PHYS 0x8000ULL

@@ -1,6 +1,6 @@
-#include <idt.h>
-#include <serial.h>
-#include <panic.h>
+#include <kernel/idt.h>
+#include <kernel/serial.h>
+#include <kernel/panic.h>
 
 idt_entry_t idt[IDT_SIZE];
 

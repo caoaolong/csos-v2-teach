@@ -16,4 +16,7 @@ long close(int fd);
 long dup2(int oldfd, int newfd);
 long lseek(int fd, long offset, int whence);
 
+/* 装载并替换当前程序：成功不返回，失败返回 -1；argv/envp 可为 0 */
+long execve(const char *path, char *const argv[], char *const envp[]);
+
 #endif /* CSOS_LIBC_UNISTD_H */

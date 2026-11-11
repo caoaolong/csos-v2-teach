@@ -186,9 +186,17 @@ int main()
         if (line[0] == '\0')
             continue;
         if (strcmp(line, "help") == 0)
-            puts("commands: help, testfd\n");
+            puts("commands: help, testfd, display\n");
         else if (strcmp(line, "testfd") == 0)
             test_fd_summary(test_fd());
+        else if (strcmp(line, "display") == 0)
+        {
+            /* 替换式拉起：成功则 shell 即被 display 取代，不返回 */
+            char *const argv[] = {"display", 0};
+
+            if (execve("/sbin/display", argv, 0) < 0)
+                puts("exec /sbin/display failed (need make master)\n");
+        }
         else
         {
             puts("unknown: ");

@@ -1,12 +1,12 @@
-#include <apic.h>
-#include <apic/lapic.h>
-#include <memory/vmm.h>
-#include <serial.h>
-#include <panic.h>
-#include <pic.h>
-#include <pit.h>
-#include <cpu.h>
-#include <timer.h>
+#include <kernel/apic.h>
+#include <kernel/apic/lapic.h>
+#include <kernel/memory/vmm.h>
+#include <kernel/serial.h>
+#include <kernel/panic.h>
+#include <kernel/pic.h>
+#include <kernel/pit.h>
+#include <kernel/cpu.h>
+#include <kernel/timer.h>
 
 #define LAPIC_ID 0x020
 #define LAPIC_VER 0x030

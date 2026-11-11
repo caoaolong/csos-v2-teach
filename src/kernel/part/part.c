@@ -1,7 +1,7 @@
-#include <part/part.h>
-#include <vdev.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/part/part.h>
+#include <kernel/vdev.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 #define PART_SEC_SIZE 512u
 #define PART_BOOT_SIG 0xaa55u

@@ -1,9 +1,9 @@
-#include <ata/ata.h>
-#include <kernel.h>
-#include <serial.h>
-#include <spinlock.h>
-#include <cpu.h>
-#include <string.h>
+#include <kernel/ata/ata.h>
+#include <kernel/kernel.h>
+#include <kernel/serial.h>
+#include <kernel/spinlock.h>
+#include <kernel/cpu.h>
+#include <kernel/string.h>
 
 extern const ata_ops_t ata_pio_ops;
 

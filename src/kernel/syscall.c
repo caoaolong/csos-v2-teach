@@ -1,14 +1,16 @@
-#include <gdt.h>
-#include <kernel.h>
-#include <kernel_layout.h>
-#include <serial.h>
-#include <syscall.h>
-#include <timer.h>
+#include <kernel/gdt.h>
+#include <kernel/kernel.h>
+#include <kernel/kernel_layout.h>
+#include <kernel/serial.h>
+#include <kernel/syscall.h>
+#include <kernel/timer.h>
 #include <abi.h>
-#include <fd.h>
-#include <sched.h>
-#include <fs/vfs.h>
-#include <gfx/console.h>
+#include <kernel/fd.h>
+#include <kernel/sched.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/gfx/console.h>
+#include <kernel/user.h>
+#include <kernel/memory/heap.h>
 
 #define MSR_EFER 0xC0000080
 #define MSR_STAR 0xC0000081
@@ -220,11 +222,106 @@ static const sys_fn_t g_sys_table[SYS_LSEEK + 1] = {
     [SYS_LSEEK] = do_sys_lseek,
 };
 
+/* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
+#define EXEC_ARG_BUNDLE 4096U
+
+/* 用户指针数组逐项拷入内核 bundle，返回个数；uaddr==0 视为 0 个 */
+static int copy_args_from_user(uint64_t uaddr, char *bundle, char *kptrs[])
+{
+    int n = 0;
+    uint32_t off = 0;
+
+    if (uaddr == 0)
+        return 0;
+    for (;;)
+    {
+        uint64_t base = uaddr + (uint64_t)n * 8ULL;
+        uint64_t v;
+        uint32_t i;
+
+        if (n >= EXEC_MAX_ARGS)
+            return -1;
+        if (!user_mem_ok(base, 8))
+            return -1;
+        v = *(const uint64_t *)(uintptr_t)base;
+        if (v == 0)
+            break;
+        if (off + VFS_PATH_MAX > EXEC_ARG_BUNDLE)
+            return -1;
+        for (i = 0; i < (uint32_t)VFS_PATH_MAX; i++)
+        {
+            if (!user_mem_ok(v + i, 1))
+                return -1;
+            bundle[off + i] = *(const char *)(uintptr_t)(v + i);
+            if (bundle[off + i] == '\0')
+                break;
+        }
+        if (i >= (uint32_t)VFS_PATH_MAX)
+            return -1; /* 单项超限 */
+        kptrs[n++] = bundle + off;
+        off += i + 1;
+    }
+    return n;
+}
+
+/* execve 需改写 trap 帧（rip/rsp），不走通用三参表，失败时原映像完好 */
+static void do_sys_execve_frame(exception_frame_t *frame)
+{
+    char kpath[VFS_PATH_MAX];
+    char *kabundle;
+    char *kenbundle;
+    char *kargv[EXEC_MAX_ARGS];
+    char *kenvp[EXEC_MAX_ARGS];
+    int kargc;
+    int kenvc;
+    uint64_t entry;
+    uint64_t rsp;
+
+    if (copy_path_from_user(frame->rdi, kpath, (uint32_t)sizeof(kpath)) != 0)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    kabundle = (char *)kmalloc(EXEC_ARG_BUNDLE);
+    kenbundle = (char *)kmalloc(EXEC_ARG_BUNDLE);
+    if (kabundle == NULL || kenbundle == NULL)
+    {
+        if (kabundle != NULL)
+            kfree(kabundle);
+        if (kenbundle != NULL)
+            kfree(kenbundle);
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    kargc = copy_args_from_user(frame->rsi, kabundle, kargv);
+    kenvc = copy_args_from_user(frame->rdx, kenbundle, kenvp);
+    if (kargc < 0 || kenvc < 0 ||
+        user_exec_replace(kpath, kargv, kargc, kenvp, kenvc, &entry, &rsp) != 0)
+    {
+        kfree(kabundle);
+        kfree(kenbundle);
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    kfree(kabundle);
+    kfree(kenbundle);
+
+    /* 成功不返回：sysret 按新 rip/rsp 进入新程序 */
+    frame->rip = entry;
+    frame->rsp = rsp;
+    frame->rax = 0;
+}
+
 void handler_syscall(exception_frame_t *frame)
 {
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
+    if (num == SYS_EXECVE)
+    {
+        do_sys_execve_frame(frame);
+        return;
+    }
     if (num > SYS_LSEEK || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",

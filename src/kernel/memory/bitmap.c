@@ -1,5 +1,5 @@
-#include <memory/bitmap.h>
-#include <string.h>
+#include <kernel/memory/bitmap.h>
+#include <kernel/string.h>
 
 void bitmap_init(bitmap_t *bm, uint8_t *storage, uint64_t bit_count)
 {

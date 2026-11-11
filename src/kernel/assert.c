@@ -1,5 +1,5 @@
-#include <assert.h>
-#include <panic.h>
+#include <kernel/assert.h>
+#include <kernel/panic.h>
 
 void __assert_fail(const char *expr, const char *file, int line, const char *func)
 {

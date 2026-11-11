@@ -1,8 +1,8 @@
-#include <fs/ramfs.h>
-#include <fs/vfs.h>
-#include <memory/heap.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/fs/ramfs.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/memory/heap.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 /* 取下一段路径分量 [*p, end)，跳过连续 '/'；返回分量长度，0 表示耗尽 */
 static uint32_t ramfs_next_comp(const char **p, const char *end, const char **comp)

@@ -1,7 +1,7 @@
 #ifndef SERIAL_H
 #define SERIAL_H
 
-#include <kernel.h>
+#include <kernel/kernel.h>
 
 #define VGA_ADDR ((volatile uint16_t *)0xB8000)
 #define COM1 0x3F8

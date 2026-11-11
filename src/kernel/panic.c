@@ -1,7 +1,7 @@
-#include <panic.h>
-#include <kernel.h>
-#include <serial.h>
-#include <gfx/console.h>
+#include <kernel/panic.h>
+#include <kernel/kernel.h>
+#include <kernel/serial.h>
+#include <kernel/gfx/console.h>
 
 static char g_panic_buf[1024];
 

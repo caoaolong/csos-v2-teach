@@ -1,7 +1,7 @@
-#include <kernel.h>
-#include <serial.h>
-#include <spinlock.h>
-#include <vdev.h>
+#include <kernel/kernel.h>
+#include <kernel/serial.h>
+#include <kernel/spinlock.h>
+#include <kernel/vdev.h>
 
 static spinlock_t g_serial_lock = SPINLOCK_INIT;
 

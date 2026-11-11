@@ -1,7 +1,7 @@
-#include <pit.h>
-#include <kernel.h>
-#include <serial.h>
-#include <pic.h>
+#include <kernel/pit.h>
+#include <kernel/kernel.h>
+#include <kernel/serial.h>
+#include <kernel/pic.h>
 
 #define PIT_INPUT_HZ 1193182u
 

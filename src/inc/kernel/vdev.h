@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <fs/vfs.h>
+#include <kernel/fs/vfs.h>
 
 #define VDEV_NAME_MAX 64
 

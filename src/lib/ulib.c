@@ -75,3 +75,9 @@ long lseek(int fd, long offset, int whence)
 {
     return syscall3(SYS_LSEEK, (long)fd, offset, (long)whence);
 }
+
+/* 替换为 path 指定的程序：成功不返回，失败返回 -1（原程序不受影响） */
+long execve(const char *path, char *const argv[], char *const envp[])
+{
+    return syscall3(SYS_EXECVE, (long)path, (long)argv, (long)envp);
+}

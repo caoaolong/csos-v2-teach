@@ -1,13 +1,13 @@
-#include <kbd.h>
-#include <apic.h>
-#include <apic/ioapic.h>
-#include <kernel.h>
-#include <serial.h>
-#include <panic.h>
-#include <spinlock.h>
-#include <string.h>
-#include <vdev.h>
-#include <sched.h>
+#include <kernel/kbd.h>
+#include <kernel/apic.h>
+#include <kernel/apic/ioapic.h>
+#include <kernel/kernel.h>
+#include <kernel/serial.h>
+#include <kernel/panic.h>
+#include <kernel/spinlock.h>
+#include <kernel/string.h>
+#include <kernel/vdev.h>
+#include <kernel/sched.h>
 
 #define KBD_DATA 0x60
 #define KBD_STATUS 0x64

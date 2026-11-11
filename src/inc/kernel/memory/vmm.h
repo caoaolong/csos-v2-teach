@@ -1,7 +1,7 @@
 #ifndef CSOS_MEMORY_VMM_H
 #define CSOS_MEMORY_VMM_H
 
-#include <memory/pmm.h>
+#include <kernel/memory/pmm.h>
 
 /* 页表项标志（与 x86-64 PTE 一致） */
 #define PTE_PRESENT (1ULL << 0)
@@ -26,6 +26,10 @@ void init_vmm(boot_info_t *boot);
  * unmap 只去掉映射，不释放物理页。
  */
 int map_page(uint64_t vaddr, uint64_t paddr, uint64_t flags);
+
+/* 拆除 [start, end) 内 4K 用户页映射并归还物理页（页表页暂不回收）。
+ * 仅处理 leaf 且置位 PTE_USER 的表项，内核页/大页一律跳过。 */
+void unmap_user_range(uint64_t start, uint64_t end);
 
 uint64_t read_cr2();
 uint64_t read_cr3();

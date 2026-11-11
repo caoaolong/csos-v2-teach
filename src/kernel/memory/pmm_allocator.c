@@ -1,4 +1,4 @@
-#include <memory/pmm_allocator.h>
+#include <kernel/memory/pmm_allocator.h>
 
 extern const pmm_allocator_ops_t pmm_allocator_bitmap_ops;
 

@@ -2,8 +2,8 @@
 #define CSOS_ACPI_H
 
 #include <stdint.h>
-#include <kernel.h>
-#include <memory/pmm.h>
+#include <kernel/kernel.h>
+#include <kernel/memory/pmm.h>
 
 #define ACPI_MAX_CPUS 16
 #define ACPI_MAX_IOAPICS 4

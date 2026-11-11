@@ -1,10 +1,10 @@
-#include <fd.h>
+#include <kernel/fd.h>
 #include <abi.h>
-#include <sched.h>
-#include <serial.h>
-#include <spinlock.h>
-#include <string.h>
-#include <memory/heap.h>
+#include <kernel/sched.h>
+#include <kernel/serial.h>
+#include <kernel/spinlock.h>
+#include <kernel/string.h>
+#include <kernel/memory/heap.h>
 
 /*
  * 单用户任务过渡：全局锁保护当前任务表。

@@ -1,12 +1,12 @@
-#include <fs/mount.h>
-#include <fs/vfs.h>
-#include <fs/ramfs.h>
-#include <fs/fat32.h>
-#include <fs/ext4.h>
-#include <part/part.h>
-#include <config.h>
-#include <serial.h>
-#include <string.h>
+#include <kernel/fs/mount.h>
+#include <kernel/fs/vfs.h>
+#include <kernel/fs/ramfs.h>
+#include <kernel/fs/fat32.h>
+#include <kernel/fs/ext4.h>
+#include <kernel/part/part.h>
+#include <kernel/config.h>
+#include <kernel/serial.h>
+#include <kernel/string.h>
 
 static const char *const g_probe_fat[] = {
     "fat32",
