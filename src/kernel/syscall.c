@@ -64,59 +64,78 @@ static int user_mem_ok(uint64_t vaddr, uint64_t size)
     return 1;
 }
 
-static uint64_t do_sys_write(uint64_t fd, uint64_t ubuf, uint64_t len)
+static void do_sys_write(exception_frame_t *frame)
 {
     vfs_file_t *f;
     int64_t n;
+    uint64_t fd = frame->rdi;
+    uint64_t ubuf = frame->rsi;
+    uint64_t len = frame->rdx;
 
     if (len == 0)
-        return 0;
+    {
+        frame->rax = 0;
+        return;
+    }
     if (!user_mem_ok(ubuf, len))
-        return (uint64_t)-1;
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
 
     f = fd_get((int)fd);
     if (f == NULL)
-        return (uint64_t)-1; /* EBADF */
+    {
+        frame->rax = (uint64_t)-1; /* EBADF */
+        return;
+    }
 
     /* vfs 层已按 O_RDONLY/O_WRONLY 做方向校验 */
     n = vfs_write(f, (const void *)(uintptr_t)ubuf, len);
-    if (n < 0)
-        return (uint64_t)-1;
-    return (uint64_t)n;
+    frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
-static uint64_t do_sys_exit(uint64_t code, uint64_t dummy1, uint64_t dummy2)
+static void do_sys_exit(exception_frame_t *frame)
 {
-    (void)dummy1;
-    (void)dummy2;
+    uint64_t code = frame->rdi;
+
     fput_string("[USER] exit(%llu), parked\n", (unsigned long long)code);
     fb_console_puts("\n[init exited]\n");
     for (;;)
         __asm__ volatile("hlt");
-    return 0; /* 不可达 */
 }
 
-static uint64_t do_sys_sleep(uint64_t ms, uint64_t dummy1, uint64_t dummy2)
+static void do_sys_sleep(exception_frame_t *frame)
 {
-    (void)dummy1;
-    (void)dummy2;
-    msleep(ms);
-    return 0;
+    msleep(frame->rdi);
+    frame->rax = 0;
 }
 
-static uint64_t do_sys_read(uint64_t fd, uint64_t ubuf, uint64_t len)
+static void do_sys_read(exception_frame_t *frame)
 {
     vfs_file_t *f;
     int64_t n;
+    uint64_t fd = frame->rdi;
+    uint64_t ubuf = frame->rsi;
+    uint64_t len = frame->rdx;
 
     if (len == 0)
-        return 0;
+    {
+        frame->rax = 0;
+        return;
+    }
     if (!user_mem_ok(ubuf, len))
-        return (uint64_t)-1;
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
 
     f = fd_get((int)fd);
     if (f == NULL)
-        return (uint64_t)-1; /* EBADF */
+    {
+        frame->rax = (uint64_t)-1; /* EBADF */
+        return;
+    }
 
     /* 阻塞语义：AGAIN 时 yield 重试，其余错误直接回 -1 */
     for (;;)
@@ -126,9 +145,7 @@ static uint64_t do_sys_read(uint64_t fd, uint64_t ubuf, uint64_t len)
             break;
         yield();
     }
-    if (n < 0)
-        return (uint64_t)-1;
-    return (uint64_t)n;
+    frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
 /* 用户路径逐字节拷入内核栈缓冲（带越界检查），要求 NUL 结尾 */
@@ -151,67 +168,74 @@ static int copy_path_from_user(uint64_t upath, char *kpath, uint32_t cap)
     return 0;
 }
 
-static uint64_t do_sys_open(uint64_t upath, uint64_t flags, uint64_t mode)
+static void do_sys_open(exception_frame_t *frame)
 {
     char kpath[VFS_PATH_MAX];
     vfs_file_t *vf = NULL;
     int fd;
     int rc;
+    uint64_t flags = frame->rsi;
 
-    (void)mode; /* 保留：vfs_open 暂无 mode 参数，CREAT 用默认权限 */
+    /* rdx mode 保留：vfs_open 暂无 mode 参数，CREAT 用默认权限 */
 
-    if (copy_path_from_user(upath, kpath, (uint32_t)sizeof(kpath)) != 0)
-        return (uint64_t)-1;
+    if (copy_path_from_user(frame->rdi, kpath, (uint32_t)sizeof(kpath)) != 0)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
 
     rc = vfs_open(kpath, (int)flags, &vf);
     if (rc != VFS_OK)
-        return (uint64_t)-1;
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
     fd = fd_install(vf);
     if (fd < 0)
     {
         vfs_close(vf);
-        return (uint64_t)-1; /* EMFILE/NOMEM */
+        frame->rax = (uint64_t)-1; /* EMFILE/NOMEM */
+        return;
     }
-    return (uint64_t)fd;
+    frame->rax = (uint64_t)fd;
 }
 
-static uint64_t do_sys_close(uint64_t fd, uint64_t dummy1, uint64_t dummy2)
+static void do_sys_close(exception_frame_t *frame)
 {
-    (void)dummy1;
-    (void)dummy2;
-    if (fd_close((int)fd) != VFS_OK)
-        return (uint64_t)-1; /* EBADF */
-    return 0;
+    if (fd_close((int)frame->rdi) != VFS_OK)
+        frame->rax = (uint64_t)-1; /* EBADF */
+    else
+        frame->rax = 0;
 }
 
-static uint64_t do_sys_dup2(uint64_t oldfd, uint64_t newfd, uint64_t dummy)
+static void do_sys_dup2(exception_frame_t *frame)
 {
-    int r;
+    int r = fd_dup2((int)frame->rdi, (int)frame->rsi);
 
-    (void)dummy;
-    r = fd_dup2((int)oldfd, (int)newfd);
-    if (r < 0)
-        return (uint64_t)-1; /* EBADF */
-    return (uint64_t)r;
+    frame->rax = r < 0 ? (uint64_t)-1 : (uint64_t)r; /* EBADF */
 }
 
-static uint64_t do_sys_lseek(uint64_t fd, uint64_t off, uint64_t whence)
+static void do_sys_lseek(exception_frame_t *frame)
 {
     vfs_file_t *f;
     int64_t n;
 
-    f = fd_get((int)fd);
+    f = fd_get((int)frame->rdi);
     if (f == NULL)
-        return (uint64_t)-1; /* EBADF */
-    n = vfs_seek(f, (int64_t)off, (int)whence);
-    if (n < 0)
-        return (uint64_t)-1;
-    return (uint64_t)n;
+    {
+        frame->rax = (uint64_t)-1; /* EBADF */
+        return;
+    }
+    n = vfs_seek(f, (int64_t)frame->rsi, (int)frame->rdx);
+    frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
-typedef uint64_t (*sys_fn_t)(uint64_t rdi, uint64_t rsi, uint64_t rdx);
+typedef void (*sys_fn_t)(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_LSEEK + 1] = {
+/* execve 定义在表之后，先声明 */
+static void do_sys_execve(exception_frame_t *frame);
+
+static const sys_fn_t g_sys_table[SYS_EXECVE + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -220,6 +244,7 @@ static const sys_fn_t g_sys_table[SYS_LSEEK + 1] = {
     [SYS_CLOSE] = do_sys_close,
     [SYS_DUP2] = do_sys_dup2,
     [SYS_LSEEK] = do_sys_lseek,
+    [SYS_EXECVE] = do_sys_execve,
 };
 
 /* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
@@ -264,8 +289,8 @@ static int copy_args_from_user(uint64_t uaddr, char *bundle, char *kptrs[])
     return n;
 }
 
-/* execve 需改写 trap 帧（rip/rsp），不走通用三参表，失败时原映像完好 */
-static void do_sys_execve_frame(exception_frame_t *frame)
+/* execve 改写 trap 帧（rip/rsp）实现替换，失败时原映像完好 */
+static void do_sys_execve(exception_frame_t *frame)
 {
     char kpath[VFS_PATH_MAX];
     char *kabundle;
@@ -317,12 +342,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num == SYS_EXECVE)
-    {
-        do_sys_execve_frame(frame);
-        return;
-    }
-    if (num > SYS_LSEEK || g_sys_table[num] == NULL)
+    if (num > SYS_EXECVE || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);
@@ -331,5 +351,5 @@ void handler_syscall(exception_frame_t *frame)
     }
 
     fn = g_sys_table[num];
-    frame->rax = fn(frame->rdi, frame->rsi, frame->rdx);
+    fn(frame);
 }

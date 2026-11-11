@@ -29,7 +29,6 @@ static void user_halt(const char *msg)
     panic("%s", msg);
 }
 
-/* 按字节拷贝：绕开 kernel_memcpy 的 uint32_t 长度限制；目标为内核可写的物理页 */
 static void raw_copy(uint8_t *dst, const uint8_t *src, uint64_t n)
 {
     uint64_t i;
@@ -48,7 +47,6 @@ static uint64_t align_up_u64(uint64_t v, uint64_t a)
     return (v + a - 1) & ~(a - 1);
 }
 
-/* 用户地址合法性：低半部、非空页、不进内核高半核 */
 static int user_range_ok(uint64_t vaddr, uint64_t size)
 {
     if (size == 0)
@@ -64,8 +62,6 @@ static int user_range_ok(uint64_t vaddr, uint64_t size)
     return 1;
 }
 
-/* 逐页分配、按最终权限映射；文件内容先写入物理页再映射，
- * 避免经只读用户虚地址拷贝触发 WP fault（CR0.WP=1 时内核也不能写只读页）。 */
 static int map_one_segment(uint64_t vaddr, uint64_t file_off,
                            uint64_t filesz, uint64_t memsz,
                            int writable, const uint8_t *img)
@@ -153,7 +149,6 @@ static int check_ehdr(const elf64_ehdr_t *e, uint64_t file_size)
     return 0;
 }
 
-/* 整文件读入 kmalloc 缓冲；返回 0 成功，buf/size 输出 */
 static int load_file_to_mem(const char *path, uint8_t **out_buf, uint64_t *out_size)
 {
     vfs_file_t *f = NULL;
@@ -218,10 +213,9 @@ static int load_file_to_mem(const char *path, uint8_t **out_buf, uint64_t *out_s
     return 0;
 }
 
-static void setup_kstack_and_enter(uint64_t rip)
+static void *alloc_user_stack_page()
 {
     void *stack_page = (void *)alloc_page();
-    uint64_t kstack_top;
 
     if (stack_page == NULL)
         user_halt("FATAL: user stack alloc failed\n");
@@ -229,6 +223,19 @@ static void setup_kstack_and_enter(uint64_t rip)
     if (map_page(USER_STACK_VADDR, (uint64_t)(uintptr_t)stack_page,
                  PTE_PRESENT | PTE_WRITABLE | PTE_USER) != 0)
         user_halt("FATAL: map user stack failed\n");
+    return stack_page;
+}
+
+/* 前向声明：定义在 exec 区；boot 与 exec 共用同一套栈布局 */
+static uint64_t exec_setup_stack(void *stack_page, char *const kargv[], int kargc,
+                                 char *const kenvp[], int kenvc);
+
+static void setup_kstack_and_enter(uint64_t rip)
+{
+    uint64_t kstack_top;
+    void *stack_page = alloc_user_stack_page();
+    /* boot 栈同样铺 argc=0：crt0 入口 pop %rdi 取 argc，裸栈顶不可读 */
+    uint64_t user_rsp = exec_setup_stack(stack_page, NULL, 0, NULL, 0);
 
     if (g_kernel_stack_page == NULL)
     {
@@ -247,14 +254,13 @@ static void setup_kstack_and_enter(uint64_t rip)
 
     fput_string("[USER] enter rip=0x%llx rsp=0x%llx rsp0=0x%llx\n",
                 (unsigned long long)rip,
-                (unsigned long long)USER_STACK_TOP,
+                (unsigned long long)user_rsp,
                 (unsigned long long)kstack_top);
 
-    enter_user(rip, USER_STACK_TOP);
+    enter_user(rip, user_rsp);
     user_halt("FATAL: enter_user returned\n");
 }
 
-/* 从已加载的 ELF 内存镜像映射 PT_LOAD；返回入口地址，失败返回 0 */
 static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size)
 {
     const elf64_ehdr_t *e = (const elf64_ehdr_t *)img;
@@ -343,6 +349,31 @@ static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size)
     return e->e_entry;
 }
 
+static int load_and_check_elf(const char *kpath, uint8_t **img_out, uint64_t *size_out)
+{
+    uint8_t *img = NULL;
+    uint64_t file_size = 0;
+
+    if (load_file_to_mem(kpath, &img, &file_size) != 0)
+        return -1;
+    if (check_ehdr((const elf64_ehdr_t *)img, file_size) != 0)
+    {
+        kfree(img);
+        return -1;
+    }
+    *img_out = img;
+    *size_out = file_size;
+    return 0;
+}
+
+static uint64_t map_loaded_elf(uint8_t *img, uint64_t file_size)
+{
+    uint64_t entry = map_elf_image(img, file_size);
+
+    kfree(img);
+    return entry;
+}
+
 void user_enter_init(const char *init_path)
 {
     uint8_t *img = NULL;
@@ -353,14 +384,12 @@ void user_enter_init(const char *init_path)
         user_halt("FATAL: empty init path\n");
 
     fput_string("[USER] loading init '%s'\n", init_path);
-    if (load_file_to_mem(init_path, &img, &file_size) != 0)
+    if (load_and_check_elf(init_path, &img, &file_size) != 0)
         user_halt("FATAL: load init failed\n");
 
-    entry = map_elf_image(img, file_size);
-    kfree(img);
-
+    entry = map_loaded_elf(img, file_size);
     if (entry == 0)
-        user_halt("FATAL: ELF parse/map init failed\n");
+        user_halt("FATAL: ELF map init failed\n");
 
     fput_string("[USER] init '%s' mapped entry=0x%llx size=%llu\n",
                 init_path, (unsigned long long)entry,
@@ -368,10 +397,8 @@ void user_enter_init(const char *init_path)
     setup_kstack_and_enter(entry);
 }
 
-/* 栈预算：字符串 + 指针表必须容纳进一页，留白给对齐 */
 #define EXEC_STACK_BUDGET (PAGE_SIZE - 512)
 
-/* bounded strlen：上限 VFS_PATH_MAX（含 NUL），超限返回 VFS_PATH_MAX */
 static uint64_t exec_arg_len(const char *s)
 {
     uint64_t n = 0;
@@ -383,28 +410,49 @@ static uint64_t exec_arg_len(const char *s)
     return n >= (uint64_t)VFS_PATH_MAX ? (uint64_t)VFS_PATH_MAX : n + 1;
 }
 
+static uint64_t exec_strings_bytes(char *const args[], int n)
+{
+    uint64_t total = 0;
+    int i;
+
+    for (i = 0; i < n; i++)
+    {
+        total += exec_arg_len(args[i]);
+        if (total > EXEC_STACK_BUDGET)
+            return (uint64_t)-1;
+    }
+    return total;
+}
+
 static int exec_args_fit(char *const kargv[], int kargc,
                          char *const kenvp[], int kenvc)
 {
-    uint64_t total = (uint64_t)(kargc + kenvc + 3) * 8ULL;
-    int i;
+    uint64_t a = exec_strings_bytes(kargv, kargc);
+    uint64_t b = exec_strings_bytes(kenvp, kenvc);
 
-    for (i = 0; i < kargc; i++)
-    {
-        total += exec_arg_len(kargv[i]);
-        if (total > EXEC_STACK_BUDGET)
-            return -1;
-    }
-    for (i = 0; i < kenvc; i++)
-    {
-        total += exec_arg_len(kenvp[i]);
-        if (total > EXEC_STACK_BUDGET)
-            return -1;
-    }
+    if (a == (uint64_t)-1 || b == (uint64_t)-1)
+        return -1;
+    if (a + b + (uint64_t)(kargc + kenvc + 3) * 8ULL > EXEC_STACK_BUDGET)
+        return -1;
     return 0;
 }
 
-/* 新栈 SysV 布局：[argc][argv..][NULL][envp..][NULL][strings]，返回用户 rsp（16 对齐） */
+static uint8_t *exec_copy_strings(uint8_t *sp, void *stack_page,
+                                  char *const args[], int n, uint64_t uaddr[])
+{
+    int i;
+
+    for (i = 0; i < n; i++)
+    {
+        uint64_t len = exec_arg_len(args[i]);
+
+        sp -= len;
+        raw_copy(sp, (const uint8_t *)args[i], len);
+        uaddr[i] = USER_STACK_TOP - (uint64_t)((uint8_t *)stack_page + PAGE_SIZE - sp);
+    }
+    return sp;
+}
+
 static uint64_t exec_setup_stack(void *stack_page, char *const kargv[], int kargc,
                                  char *const kenvp[], int kenvc)
 {
@@ -414,22 +462,8 @@ static uint64_t exec_setup_stack(void *stack_page, char *const kargv[], int karg
     uint64_t *dp;
     int i;
 
-    for (i = 0; i < kargc; i++)
-    {
-        uint64_t n = exec_arg_len(kargv[i]);
-
-        sp -= n;
-        raw_copy(sp, (const uint8_t *)kargv[i], n);
-        uaddr[i] = USER_STACK_TOP - (uint64_t)((uint8_t *)stack_page + PAGE_SIZE - sp);
-    }
-    for (i = 0; i < kenvc; i++)
-    {
-        uint64_t n = exec_arg_len(kenvp[i]);
-
-        sp -= n;
-        raw_copy(sp, (const uint8_t *)kenvp[i], n);
-        eaddr[i] = USER_STACK_TOP - (uint64_t)((uint8_t *)stack_page + PAGE_SIZE - sp);
-    }
+    sp = exec_copy_strings(sp, stack_page, kargv, kargc, uaddr);
+    sp = exec_copy_strings(sp, stack_page, kenvp, kenvc, eaddr);
     sp = (uint8_t *)(((uintptr_t)sp - (uint64_t)(kargc + kenvc + 3) * 8ULL) & ~15ULL);
     dp = (uint64_t *)sp;
     dp[0] = (uint64_t)kargc;
@@ -459,30 +493,18 @@ int user_exec_replace(const char *kpath, char *const kargv[], int kargc,
         return -1;
     if (exec_args_fit(kargv, kargc, kenvp, kenvc) != 0)
         return -1;
-    if (load_file_to_mem(kpath, &img, &file_size) != 0)
+    if (load_and_check_elf(kpath, &img, &file_size) != 0)
         return -1;
-    if (check_ehdr((const elf64_ehdr_t *)img, file_size) != 0)
-    {
-        kfree(img);
-        return -1;
-    }
 
     /* 自此旧映像销毁：失败即 FATAL，不再返回原程序 */
     fput_string("[USER] exec '%s'\n", kpath);
     unmap_user_range(USER_IMAGE_BASE, USER_IMAGE_END);
 
-    entry = map_elf_image(img, file_size);
-    kfree(img);
+    entry = map_loaded_elf(img, file_size);
     if (entry == 0)
         user_halt("FATAL: exec map image failed\n");
 
-    stack_page = (void *)alloc_page();
-    if (stack_page == NULL)
-        user_halt("FATAL: exec stack alloc failed\n");
-    kernel_memset(stack_page, 0, (uint32_t)PAGE_SIZE);
-    if (map_page(USER_STACK_VADDR, (uint64_t)(uintptr_t)stack_page,
-                 PTE_PRESENT | PTE_WRITABLE | PTE_USER) != 0)
-        user_halt("FATAL: exec map stack failed\n");
+    stack_page = alloc_user_stack_page();
 
     *entry_out = entry;
     *rsp_out = exec_setup_stack(stack_page, kargv, kargc, kenvp, kenvc);
