@@ -143,12 +143,31 @@ int fd_install(vfs_file_t *vf)
     return fd;
 }
 
+/* 调用方已持 g_fd_lock：关闭指定任务的 fd；0=成功（vf/ep 为待释放物，可为 NULL），-1=EBADF */
+static int fd_close_for_locked(task_t *t, int fd, vfs_file_t **vfp, fd_entry_t **ep)
+{
+    fd_entry_t *e = t->fds[fd];
+
+    *vfp = NULL;
+    *ep = NULL;
+    if (e == NULL)
+        return -1;
+    t->fds[fd] = NULL;
+    if (--e->refs == 0)
+    {
+        *vfp = e->vf;
+        *ep = e;
+    }
+    return 0;
+}
+
 int fd_close(int fd)
 {
     task_t *t;
-    fd_entry_t *e;
+    fd_entry_t *e = NULL;
     vfs_file_t *vf = NULL;
     uint64_t flags;
+    int rc;
 
     if (fd < 0 || fd >= FD_MAX)
         return VFS_ERR_INVAL;
@@ -156,16 +175,10 @@ int fd_close(int fd)
     if (t == NULL)
         return VFS_ERR_INVAL;
     flags = spin_lock_irqsave(&g_fd_lock);
-    e = t->fds[fd];
-    if (e == NULL)
-    {
-        spin_unlock_irqrestore(&g_fd_lock, flags);
-        return VFS_ERR_INVAL; /* EBADF */
-    }
-    t->fds[fd] = NULL;
-    if (--e->refs == 0)
-        vf = e->vf;
+    rc = fd_close_for_locked(t, fd, &vf, &e);
     spin_unlock_irqrestore(&g_fd_lock, flags);
+    if (rc != 0)
+        return VFS_ERR_INVAL; /* EBADF */
 
     /* 引用归零才真正 vfs_close + 释放；锁外做，避免嵌套 devfs 锁 */
     if (vf != NULL)
@@ -174,6 +187,58 @@ int fd_close(int fd)
         kfree(e);
     }
     return VFS_OK;
+}
+
+/* fork：子表指针复用父描述（refs++，offset 共享，语义同 dup2 全表版） */
+void fd_clone_table(task_t *dst, task_t *src)
+{
+    uint64_t flags;
+    int i;
+
+    if (dst == NULL || src == NULL || dst == src)
+        return;
+    flags = spin_lock_irqsave(&g_fd_lock);
+    for (i = 0; i < FD_MAX; i++)
+    {
+        dst->fds[i] = src->fds[i];
+        if (dst->fds[i] != NULL)
+            dst->fds[i]->refs++;
+    }
+    spin_unlock_irqrestore(&g_fd_lock, flags);
+}
+
+/* 任务回收：逐项 close（引用归零才真正 vfs_close） */
+void fd_table_cleanup(task_t *t)
+{
+    fd_entry_t *es[FD_MAX];
+    vfs_file_t *vfs[FD_MAX];
+    uint64_t flags;
+    int i;
+    int n = 0;
+
+    if (t == NULL)
+        return;
+    flags = spin_lock_irqsave(&g_fd_lock);
+    for (i = 0; i < FD_MAX; i++)
+    {
+        vfs_file_t *vf = NULL;
+        fd_entry_t *e = NULL;
+
+        if (fd_close_for_locked(t, i, &vf, &e) != 0)
+            continue;
+        if (vf == NULL)
+            continue;
+        vfs[n] = vf;
+        es[n] = e;
+        n++;
+    }
+    spin_unlock_irqrestore(&g_fd_lock, flags);
+
+    for (i = 0; i < n; i++)
+    {
+        vfs_close(vfs[i]);
+        kfree(es[i]);
+    }
 }
 
 int fd_dup2(int oldfd, int newfd)

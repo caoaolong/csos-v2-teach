@@ -28,6 +28,12 @@ int fd_install(vfs_file_t *vf);
 /* 关闭当前任务的 fd；成功返回 VFS_OK */
 int fd_close(int fd);
 
+/* fork：子表指针复用父描述（refs++，offset 共享，语义同 dup2 全表版） */
+void fd_clone_table(struct task *dst, struct task *src);
+
+/* 任务回收：逐项 close（引用归零才真正 vfs_close） */
+void fd_table_cleanup(struct task *t);
+
 /* oldfd 共享到 newfd（同描述、共享 offset）；成功返回 newfd，失败返回 -1 */
 int fd_dup2(int oldfd, int newfd);
 

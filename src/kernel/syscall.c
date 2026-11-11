@@ -11,6 +11,7 @@
 #include <kernel/gfx/console.h>
 #include <kernel/user.h>
 #include <kernel/memory/heap.h>
+#include <kernel/memory/vmm.h>
 
 #define MSR_EFER 0xC0000080
 #define MSR_STAR 0xC0000081
@@ -97,12 +98,82 @@ static void do_sys_write(exception_frame_t *frame)
 
 static void do_sys_exit(exception_frame_t *frame)
 {
-    uint64_t code = frame->rdi;
+    fput_string("[USER] task '%s' exit(%llu)\n",
+                sched_current() != NULL && sched_current()->name != NULL
+                    ? sched_current()->name
+                    : "?",
+                (unsigned long long)frame->rdi);
+    task_exit_current((int)frame->rdi);
+}
 
-    fput_string("[USER] exit(%llu), parked\n", (unsigned long long)code);
-    fb_console_puts("\n[init exited]\n");
+/* fork：子任务复制父地址空间 + trap 帧 + fd 表；父返回子 pid，子返回 0 */
+static void do_sys_fork(exception_frame_t *frame)
+{
+    task_t *cur = sched_current();
+    task_t *child;
+    uint64_t *pgdir;
+
+    if (cur == NULL || cur->pgdir == NULL)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    child = task_alloc_fork(frame);
+    if (child == NULL)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    pgdir = vmm_new_user_pml4(USER_IMAGE_BASE, USER_IMAGE_END);
+    if (pgdir == NULL)
+    {
+        task_abort_fork(child);
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    if (vmm_clone_user_range(pgdir, cur->pgdir, USER_IMAGE_BASE, USER_IMAGE_END) != 0)
+    {
+        vmm_free_user_pml4(pgdir, USER_IMAGE_BASE, USER_IMAGE_END);
+        task_abort_fork(child);
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    child->pgdir = pgdir;
+    fd_clone_table(child, cur);
+    task_enqueue(child);
+    frame->rax = (uint64_t)child->pid;
+}
+
+/* wait：阻塞回收任一僵尸子进程；>0=pid，-1=无子（0 则 yield 重试） */
+static void do_sys_wait(exception_frame_t *frame)
+{
+    uint64_t ustatus = frame->rdi;
+    int pid;
+    int code;
+
+    if (ustatus != 0 && !user_mem_ok(ustatus, sizeof(int)))
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
     for (;;)
-        __asm__ volatile("hlt");
+    {
+        int r = sched_wait_reap(&pid, &code);
+
+        if (r < 0)
+        {
+            frame->rax = (uint64_t)-1;
+            return;
+        }
+        if (r > 0)
+        {
+            if (ustatus != 0)
+                *(int *)(uintptr_t)ustatus = code;
+            frame->rax = (uint64_t)pid;
+            return;
+        }
+        yield();
+    }
 }
 
 static void do_sys_sleep(exception_frame_t *frame)
@@ -235,7 +306,7 @@ typedef void (*sys_fn_t)(exception_frame_t *frame);
 /* execve 定义在表之后，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_EXECVE + 1] = {
+static const sys_fn_t g_sys_table[SYS_WAIT + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -245,6 +316,8 @@ static const sys_fn_t g_sys_table[SYS_EXECVE + 1] = {
     [SYS_DUP2] = do_sys_dup2,
     [SYS_LSEEK] = do_sys_lseek,
     [SYS_EXECVE] = do_sys_execve,
+    [SYS_FORK] = do_sys_fork,
+    [SYS_WAIT] = do_sys_wait,
 };
 
 /* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
@@ -342,7 +415,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_EXECVE || g_sys_table[num] == NULL)
+    if (num > SYS_WAIT || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);

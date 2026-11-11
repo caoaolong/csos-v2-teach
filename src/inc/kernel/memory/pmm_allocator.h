@@ -23,6 +23,10 @@ typedef struct pmm_allocator_ops
     uint64_t (*alloc_page)(void);
     void (*free_page)(uint64_t page);
 
+    /* 连续物理页分配/释放：n>=1；失败返回 PMM_INVALID_ADDR（见 pmm.h） */
+    uint64_t (*alloc_pages)(uint64_t n);
+    void (*free_range)(uint64_t page, uint64_t n);
+
     uint64_t (*total_pages)(void);
     uint64_t (*free_pages)(void);
 } pmm_allocator_ops_t;

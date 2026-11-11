@@ -1,4 +1,4 @@
-#include <kernel/memory/pmm_allocator.h>
+﻿#include <kernel/memory/pmm_allocator.h>
 #include <kernel/memory/bitmap.h>
 #include <kernel/memory/pmm.h>
 
@@ -11,7 +11,9 @@
 static uint8_t page_bitmap_storage[PMM_BITMAP_BYTES];
 static bitmap_t page_bitmap;
 static uint64_t managed_pages;
-static uint64_t free_pages;
+static uint64_t nr_free_pages;
+
+static void bitmap_free_range(uint64_t page, uint64_t n);
 
 static inline uint64_t page_align_up(uint64_t addr)
 {
@@ -31,7 +33,7 @@ static int bitmap_allocator_init(uint64_t pages)
     bitmap_init(&page_bitmap, page_bitmap_storage, PMM_MAX_PAGES);
     /* 全部标为已用，再由 init_pmm 按 Memory Map 放开可用区 */
     bitmap_set_all(&page_bitmap, 1);
-    free_pages = 0;
+    nr_free_pages = 0;
     managed_pages = pages;
     page_bitmap.size = pages;
     return 0;
@@ -53,8 +55,8 @@ static void bitmap_mark_used(uint64_t start, uint64_t end)
         if (!bitmap_test(&page_bitmap, page))
         {
             bitmap_set(&page_bitmap, page);
-            if (free_pages > 0)
-                free_pages--;
+            if (nr_free_pages > 0)
+                nr_free_pages--;
         }
     }
 }
@@ -75,7 +77,7 @@ static void bitmap_mark_free(uint64_t start, uint64_t end)
         if (bitmap_test(&page_bitmap, page))
         {
             bitmap_clear(&page_bitmap, page);
-            free_pages++;
+            nr_free_pages++;
         }
     }
 }
@@ -88,16 +90,59 @@ static uint64_t bitmap_alloc_page()
         return (uint64_t)-1;
 
     bitmap_set(&page_bitmap, page);
-    free_pages--;
+    nr_free_pages--;
     return (uint64_t)(uintptr_t)(page * PAGE_SIZE);
 }
 
 static void bitmap_free_page(uint64_t page)
 {
+    bitmap_free_range(page, 1);
+}
+
+static uint64_t bitmap_alloc_pages(uint64_t n)
+{
+    uint64_t i;
+    uint64_t run;
+    uint64_t len;
+
+    if (n == 0 || n > managed_pages)
+        return (uint64_t)-1;
+
+    /* 首次适配：找第一个长度 >= n 的连续空闲段 */
+    for (i = 0; i + n <= managed_pages;)
+    {
+        if (bitmap_test(&page_bitmap, i))
+        {
+            i++;
+            continue;
+        }
+        for (run = i, len = 0; run < managed_pages; run++)
+        {
+            if (bitmap_test(&page_bitmap, run))
+                break;
+            len++;
+            if (len >= n)
+                break;
+        }
+        if (len >= n)
+        {
+            for (run = i; run < i + n; run++)
+                bitmap_set(&page_bitmap, run);
+            nr_free_pages -= n;
+            return (uint64_t)(uintptr_t)(i * PAGE_SIZE);
+        }
+        i = run + 1;
+    }
+    return (uint64_t)-1;
+}
+
+static void bitmap_free_range(uint64_t page, uint64_t n)
+{
     uint64_t addr;
     uint64_t idx;
+    uint64_t i;
 
-    if (page == (uint64_t)-1)
+    if (page == (uint64_t)-1 || n == 0)
         return;
 
     addr = (uint64_t)(uintptr_t)page;
@@ -107,11 +152,16 @@ static void bitmap_free_page(uint64_t page)
     idx = addr / PAGE_SIZE;
     if (idx >= managed_pages)
         return;
+    if (idx + n > managed_pages)
+        n = managed_pages - idx;
 
-    if (bitmap_test(&page_bitmap, idx))
+    for (i = 0; i < n; i++)
     {
-        bitmap_clear(&page_bitmap, idx);
-        free_pages++;
+        if (bitmap_test(&page_bitmap, idx + i))
+        {
+            bitmap_clear(&page_bitmap, idx + i);
+            nr_free_pages++;
+        }
     }
 }
 
@@ -122,7 +172,7 @@ static uint64_t bitmap_total_pages()
 
 static uint64_t bitmap_free_pages()
 {
-    return free_pages;
+    return nr_free_pages;
 }
 
 const pmm_allocator_ops_t pmm_allocator_bitmap_ops = {
@@ -132,6 +182,8 @@ const pmm_allocator_ops_t pmm_allocator_bitmap_ops = {
     .mark_free = bitmap_mark_free,
     .alloc_page = bitmap_alloc_page,
     .free_page = bitmap_free_page,
+    .alloc_pages = bitmap_alloc_pages,
+    .free_range = bitmap_free_range,
     .total_pages = bitmap_total_pages,
     .free_pages = bitmap_free_pages,
 };

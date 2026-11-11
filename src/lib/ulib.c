@@ -81,3 +81,15 @@ long execve(const char *path, char *const argv[], char *const envp[])
 {
     return syscall3(SYS_EXECVE, (long)path, (long)argv, (long)envp);
 }
+
+/* 复制当前任务：父返回子 pid，子返回 0，失败返回 -1 */
+long fork(void)
+{
+    return syscall1(SYS_FORK, 0);
+}
+
+/* 阻塞回收一个已退出子进程：status 回填 exit 码（可传 0）；无子返回 -1 */
+long wait(int *status)
+{
+    return syscall1(SYS_WAIT, (long)status);
+}
