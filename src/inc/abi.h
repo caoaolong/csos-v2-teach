@@ -18,6 +18,8 @@
 #define SYS_DUP2 7  /* rdi=oldfd, rsi=newfd -> newfd/-1 */
 #define SYS_LSEEK 8 /* rdi=fd, rsi=offset, rdx=whence(SEEK_*) -> 新位置/-1 */
 #define SYS_EXECVE 9 /* rdi=path, rsi=argv, rdx=envp -> 成功不返回/失败-1 */
+#define SYS_FORK 10 /* -> 子 pid/子 0/失败-1 */
+#define SYS_WAIT 11 /* rdi=status(out, 可 0) -> 子 pid/失败-1（阻塞到有子可收） */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */

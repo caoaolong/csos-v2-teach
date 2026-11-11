@@ -19,4 +19,10 @@ long lseek(int fd, long offset, int whence);
 /* 装载并替换当前程序：成功不返回，失败返回 -1；argv/envp 可为 0 */
 long execve(const char *path, char *const argv[], char *const envp[]);
 
+/* 复制当前任务：父返回子 pid，子返回 0，失败返回 -1 */
+long fork(void);
+
+/* 阻塞回收一个已退出子进程：>0=子 pid（status 回填 exit 码，可传 0），-1=无子 */
+long wait(int *status);
+
 #endif /* CSOS_LIBC_UNISTD_H */

@@ -57,9 +57,24 @@ int main()
             puts("commands: help, display\n");
         else if (strcmp(line, "display") == 0)
         {
-            char *const argv[] = {"display", 0};
-            if (execve("/sbin/display", argv, 0) < 0)
-                puts("exec /sbin/display failed (need make master)\n");
+            /* fork+exec 拉起：子进程替换为 display，父 shell 继续值守
+             * TODO: init 常驻回收器，wait 掉已退出的后台子进程防僵尸堆积 */
+            long pid = fork();
+
+            if (pid < 0)
+                puts("fork failed\n");
+            else if (pid == 0)
+            {
+                char *const argv[] = {"display", 0};
+
+                if (execve("/sbin/display", argv, 0) < 0)
+                {
+                    puts("exec /sbin/display failed\n");
+                    exit(1);
+                }
+            }
+            else
+                puts("display launched\n");
         }
         else
         {

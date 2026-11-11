@@ -133,6 +133,26 @@ void free_page(uint64_t page)
     alloc->free_page(page);
 }
 
+uint64_t alloc_pages(uint64_t n)
+{
+    const pmm_allocator_ops_t *alloc = pmm_allocator_current();
+
+    if (alloc == NULL || alloc->alloc_pages == NULL || n == 0)
+        return PMM_INVALID_ADDR;
+
+    return alloc->alloc_pages(n);
+}
+
+void free_pages(uint64_t page, uint64_t n)
+{
+    const pmm_allocator_ops_t *alloc = pmm_allocator_current();
+
+    if (alloc == NULL || alloc->free_range == NULL || n == 0)
+        return;
+
+    alloc->free_range(page, n);
+}
+
 uint64_t pmm_total_pages()
 {
     const pmm_allocator_ops_t *alloc = pmm_allocator_current();

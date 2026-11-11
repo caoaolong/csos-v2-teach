@@ -7,17 +7,13 @@
 #include <kernel/panic.h>
 #include <kernel/string.h>
 #include <kernel/syscall.h>
+#include <kernel/sched.h>
 #include <kernel/tss.h>
 #include <kernel/gfx/console.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/kernel_layout.h>
 
 extern void enter_user(uint64_t rip, uint64_t rsp);
-
-static void *g_kernel_stack_page;
-
-uint64_t syscall_kstack_top;
-uint64_t syscall_user_rsp;
 
 /* 最小 loader 上限：静态可控，不做大文件/动态链接 */
 #define ELF_MAX_FILE_SIZE (8ULL * 1024 * 1024)
@@ -49,15 +45,13 @@ static uint64_t align_up_u64(uint64_t v, uint64_t a)
 
 static int user_range_ok(uint64_t vaddr, uint64_t size)
 {
+    /* 收敛进每任务私有的 [USER_IMAGE_BASE, USER_IMAGE_END) 窗口
+     * （= PDPT[1] 私有子树，fork 拷贝 / wait 回收的基本单位）。 */
     if (size == 0)
-        return 0;
-    if (vaddr < PAGE_SIZE)
         return 0;
     if (vaddr + size < vaddr)
         return 0; /* 回绕 */
-    if (vaddr + size > (uint64_t)0x0000800000000000ULL)
-        return 0; /* 须在 canonical 低半部 */
-    if (vaddr + size > KERNEL_VIRT_BASE)
+    if (vaddr < USER_IMAGE_BASE || vaddr + size > USER_IMAGE_END)
         return 0;
     return 1;
 }
@@ -232,20 +226,23 @@ static uint64_t exec_setup_stack(void *stack_page, char *const kargv[], int karg
 
 static void setup_kstack_and_enter(uint64_t rip)
 {
+    task_t *self = sched_current();
+    void *kstack_page;
     uint64_t kstack_top;
     void *stack_page = alloc_user_stack_page();
     /* boot 栈同样铺 argc=0：crt0 入口 pop %rdi 取 argc，裸栈顶不可读 */
     uint64_t user_rsp = exec_setup_stack(stack_page, NULL, 0, NULL, 0);
 
-    if (g_kernel_stack_page == NULL)
-    {
-        g_kernel_stack_page = (void *)alloc_page();
-        if (g_kernel_stack_page == NULL)
-            user_halt("FATAL: syscall kstack alloc failed\n");
-        kernel_memset(g_kernel_stack_page, 0, (uint32_t)PAGE_SIZE);
-    }
+    if (self == NULL)
+        user_halt("FATAL: no current task for init\n");
+    kstack_page = (void *)alloc_pages(USER_KSTACK_PAGES);
+    if (kstack_page == NULL)
+        user_halt("FATAL: syscall kstack alloc failed\n");
+    kernel_memset(kstack_page, 0, (uint32_t)USER_KSTACK_SIZE);
+    self->kstack_page = kstack_page;
 
-    kstack_top = (uint64_t)(uintptr_t)g_kernel_stack_page + PAGE_SIZE;
+    kstack_top = (uint64_t)(uintptr_t)kstack_page + USER_KSTACK_SIZE;
+    self->kstack_top = kstack_top;
     syscall_kstack_top = kstack_top; /* 供 syscall_entry 切栈 */
     tss_set_rsp0(kstack_top);
 
@@ -376,12 +373,24 @@ static uint64_t map_loaded_elf(uint8_t *img, uint64_t file_size)
 
 void user_enter_init(const char *init_path)
 {
+    task_t *self = sched_current();
+    uint64_t *pgdir;
     uint8_t *img = NULL;
     uint64_t file_size = 0;
     uint64_t entry;
 
     if (init_path == NULL || init_path[0] == '\0')
         user_halt("FATAL: empty init path\n");
+    if (self == NULL)
+        user_halt("FATAL: no current task for init\n");
+
+    /* 先建私表再映射：后续装载落进任务自己的 PDPT[1] 子树 */
+    pgdir = vmm_new_user_pml4(USER_IMAGE_BASE, USER_IMAGE_END);
+    if (pgdir == NULL)
+        user_halt("FATAL: init addr space alloc failed\n");
+    self->pgdir = pgdir;
+    sched_set_init_task(self);
+    vmm_switch_active(pgdir);
 
     fput_string("[USER] loading init '%s'\n", init_path);
     if (load_and_check_elf(init_path, &img, &file_size) != 0)

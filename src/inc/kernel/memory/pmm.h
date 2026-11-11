@@ -80,6 +80,11 @@ void init_pmm(boot_info_t *boot_info);
 uint64_t alloc_page();
 void free_page(uint64_t addr);
 
+/* 分配 / 释放 n 个连续物理页（用户任务 kstack 用 2 页防 exec 深调用栈溢出）；
+ * 失败返回 PMM_INVALID_ADDR；addr 须页对齐。 */
+uint64_t alloc_pages(uint64_t n);
+void free_pages(uint64_t addr, uint64_t n);
+
 uint64_t pmm_total_pages();
 uint64_t pmm_free_pages();
 
