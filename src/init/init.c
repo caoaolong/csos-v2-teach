@@ -1,10 +1,6 @@
 #include <unistd.h>
 #include <string.h>
-
-static void puts(const char *s)
-{
-    write(STDOUT_FILENO, s, strlen(s));
-}
+#include <stdio.h>
 
 #define LINE_MAX 128
 
@@ -20,7 +16,7 @@ static unsigned long read_line(char *line, unsigned long cap)
             continue;
         if (c == '\n')
         {
-            puts("\n");
+            printf("\n");
             break;
         }
         if (c == '\b' || c == 0x7f)
@@ -28,14 +24,14 @@ static unsigned long read_line(char *line, unsigned long cap)
             if (len > 0)
             {
                 len--;
-                puts("\b \b");
+                printf("\b \b");
             }
             continue;
         }
         if (len + 1 < cap)
         {
             line[len++] = c;
-            write(STDOUT_FILENO, &c, 1);
+            printf("%c", c);
         }
     }
     line[len] = '\0';
@@ -46,15 +42,15 @@ int main()
 {
     static char line[LINE_MAX];
 
-    puts("csos shell. type 'help'.\n");
+    printf("csos shell. type 'help'.\n");
     for (;;)
     {
-        puts("csos> ");
+        printf("csos> ");
         read_line(line, sizeof(line));
         if (line[0] == '\0')
             continue;
         if (strcmp(line, "help") == 0)
-            puts("commands: help, display\n");
+            printf("commands: help, display\n");
         else if (strcmp(line, "display") == 0)
         {
             /* fork+exec 拉起：子进程替换为 display，父 shell 继续值守
@@ -62,25 +58,23 @@ int main()
             long pid = fork();
 
             if (pid < 0)
-                puts("fork failed\n");
+                printf("fork failed\n");
             else if (pid == 0)
             {
                 char *const argv[] = {"display", 0};
 
                 if (execve("/sbin/display", argv, 0) < 0)
                 {
-                    puts("exec /sbin/display failed\n");
+                    printf("exec /sbin/display failed\n");
                     exit(1);
                 }
             }
             else
-                puts("display launched\n");
+                printf("display launched\n");
         }
         else
         {
-            puts("unknown: ");
-            puts(line);
-            puts("\n");
+            printf("unknown: %s\n", line);
         }
     }
 }

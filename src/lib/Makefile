@@ -16,6 +16,11 @@ $(BUILD_DIR)/lib/%.o: $(SRC_DIR)/lib/%.S
 	mkdir -p $(dir $@)
 	$(CC) $(UFLAGS) -c -o $@ $<
 
+# stdio.o（printf）单列 -Os：init/display 二进制限一页，-O0 下 vprintf 超预算
+$(BUILD_DIR)/lib/stdio.o: $(SRC_DIR)/lib/stdio.c
+	mkdir -p $(dir $@)
+	$(CC) $(UFLAGS) -Os -c -o $@ $<
+
 $(BUILD_DIR)/lib/%.o: $(SRC_DIR)/lib/%.c
 	mkdir -p $(dir $@)
 	$(CC) $(UFLAGS) -c -o $@ $<
