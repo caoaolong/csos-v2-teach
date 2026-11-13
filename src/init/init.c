@@ -38,40 +38,49 @@ static unsigned long read_line(char *line, unsigned long cap)
     return len;
 }
 
+static long launch_display()
+{
+    long pid = fork();
+
+    if (pid < 0)
+        return -1;
+    if (pid == 0)
+    {
+        char *const argv[] = {"display", 0};
+
+        if (execve("/sbin/display", argv, 0) < 0)
+        {
+            printf("exec /sbin/display failed\n");
+            exit(1);
+        }
+    }
+    return pid;
+}
+
 int main()
 {
     static char line[LINE_MAX];
 
     printf("csos shell. type 'help'.\n");
+    if (launch_display() < 0)
+        printf("display launch failed, fallback to shell\n");
+    else
+        printf("display launched\n");
     for (;;)
     {
+        {
+            int st = 0;
+            long pid = waitpid(-1, &st, WNOHANG);
+
+            if (pid > 0)
+                printf("reaped pid=%ld exit=%d\n", pid, st);
+        }
         printf("csos> ");
         read_line(line, sizeof(line));
         if (line[0] == '\0')
             continue;
         if (strcmp(line, "help") == 0)
-            printf("commands: help, display\n");
-        else if (strcmp(line, "display") == 0)
-        {
-            /* fork+exec 拉起：子进程替换为 display，父 shell 继续值守
-             * TODO: init 常驻回收器，wait 掉已退出的后台子进程防僵尸堆积 */
-            long pid = fork();
-
-            if (pid < 0)
-                printf("fork failed\n");
-            else if (pid == 0)
-            {
-                char *const argv[] = {"display", 0};
-
-                if (execve("/sbin/display", argv, 0) < 0)
-                {
-                    printf("exec /sbin/display failed\n");
-                    exit(1);
-                }
-            }
-            else
-                printf("display launched\n");
-        }
+            printf("commands: help\n");
         else
         {
             printf("unknown: %s\n", line);

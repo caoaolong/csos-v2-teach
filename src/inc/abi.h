@@ -19,7 +19,7 @@
 #define SYS_LSEEK 8 /* rdi=fd, rsi=offset, rdx=whence(SEEK_*) -> 新位置/-1 */
 #define SYS_EXECVE 9 /* rdi=path, rsi=argv, rdx=envp -> 成功不返回/失败-1 */
 #define SYS_FORK 10 /* -> 子 pid/子 0/失败-1 */
-#define SYS_WAIT 11 /* rdi=status(out, 可 0) -> 子 pid/失败-1（阻塞到有子可收） */
+#define SYS_WAIT 11 /* rdi=status(out,可0),rsi=flags(仅WNOHANG) -> pid/0(WNOHANG无僵尸)/-1 */
 #define SYS_GETPID 12 /* -> 当前任务 pid */
 #define SYS_GETPPID 13 /* -> 父任务 pid，无父则 -1 */
 
@@ -41,5 +41,8 @@
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
+
+/* wait flags：仅 WNOHANG（非阻塞轮询） */
+#define WNOHANG 1
 
 #endif /* CSOS_ABI_H */
