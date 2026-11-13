@@ -22,6 +22,7 @@
 #define SYS_WAIT 11 /* rdi=status(out,可0),rsi=flags(仅WNOHANG) -> pid/0(WNOHANG无僵尸)/-1 */
 #define SYS_GETPID 12 /* -> 当前任务 pid */
 #define SYS_GETPPID 13 /* -> 父任务 pid，无父则 -1 */
+#define SYS_BRK 14 /* rdi=new_brk(0=查询) -> 调整后 brk/失败-1 */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */

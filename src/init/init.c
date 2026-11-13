@@ -57,6 +57,38 @@ static long launch_display()
     return pid;
 }
 
+#define CAT_BUF_SIZE 512
+
+static void do_cat(const char *path)
+{
+    static char buf[CAT_BUF_SIZE];
+    long fd = open(path, O_RDONLY);
+    long n;
+
+    if (fd < 0)
+    {
+        printf("cat: cannot open '%s'\n", path);
+        return;
+    }
+    for (;;)
+    {
+        n = read((int)fd, buf, sizeof(buf));
+        if (n < 0)
+        {
+            printf("cat: read error\n");
+            break;
+        }
+        if (n == 0)
+            break; /* EOF */
+        if (write(STDOUT_FILENO, buf, (unsigned long)n) < 0)
+        {
+            printf("cat: write error\n");
+            break;
+        }
+    }
+    close((int)fd);
+}
+
 int main()
 {
     static char line[LINE_MAX];
@@ -80,7 +112,18 @@ int main()
         if (line[0] == '\0')
             continue;
         if (strcmp(line, "help") == 0)
-            printf("commands: help\n");
+            printf("commands: help, cat <path>\n");
+        else if (strncmp(line, "cat ", 4) == 0)
+        {
+            const char *p = line + 4;
+
+            while (*p == ' ')
+                p++;
+            if (*p == '\0')
+                printf("usage: cat <path>\n");
+            else
+                do_cat(p);
+        }
         else
         {
             printf("unknown: %s\n", line);
