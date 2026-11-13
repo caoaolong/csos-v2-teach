@@ -144,16 +144,36 @@ static void do_sys_fork(exception_frame_t *frame)
     frame->rax = (uint64_t)child->pid;
 }
 
-/* wait：阻塞回收任一僵尸子进程；>0=pid，-1=无子（0 则 yield 重试） */
+/* wait：rdi=status(out,可0)，rsi=flags(仅WNOHANG)； */
 static void do_sys_wait(exception_frame_t *frame)
 {
     uint64_t ustatus = frame->rdi;
+    uint64_t flags = frame->rsi;
     int pid;
     int code;
 
+    if ((flags & ~(uint64_t)WNOHANG) != 0)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
     if (ustatus != 0 && !user_mem_ok(ustatus, sizeof(int)))
     {
         frame->rax = (uint64_t)-1;
+        return;
+    }
+    if ((flags & WNOHANG) != 0)
+    {
+        int r = sched_wait_reap_nb(&pid, &code);
+
+        if (r <= 0)
+        {
+            frame->rax = (uint64_t)r;
+            return;
+        }
+        if (ustatus != 0)
+            *(int *)(uintptr_t)ustatus = code;
+        frame->rax = (uint64_t)pid;
         return;
     }
     for (;;)

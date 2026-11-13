@@ -91,7 +91,15 @@ long fork(void)
 /* 阻塞回收一个已退出子进程：status 回填 exit 码（可传 0）；无子返回 -1 */
 long wait(int *status)
 {
-    return syscall1(SYS_WAIT, (long)status);
+    return waitpid(-1, status, 0);
+}
+
+/* 回收子进程：仅支持 pid=-1（任意子进程）；options 仅支持 WNOHANG */
+long waitpid(int pid, int *status, int options)
+{
+    if (pid != -1)
+        return -1;
+    return syscall3(SYS_WAIT, (long)status, (long)options, 0);
 }
 
 /* 取当前任务 pid；失败返回 -1 */

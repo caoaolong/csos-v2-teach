@@ -447,7 +447,6 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
         next->cpu = (uint8_t)cpu;
     }
 
-
     /* Switch address space and entry stack with task: kernel tasks (pgdir NULL) use master;
      * kernel stack/TSS only maintained for user tasks. */
     {
@@ -582,18 +581,13 @@ void task_exit_current(int code)
         yield();
 }
 
-int sched_wait_reap(int *pid_out, int *code_out)
+static task_t *wait_take_zombie(task_t *cur, int *has_child_out)
 {
-    task_t *cur = sched_current();
     task_t *prev = NULL;
     task_t *it;
     task_t *z = NULL;
     int has_child = 0;
-    uint64_t flags;
 
-    if (cur == NULL || pid_out == NULL || code_out == NULL)
-        return -1;
-    flags = spin_lock_irqsave(&g_sched_lock);
     for (it = g_all_tasks; it != NULL; prev = it, it = it->all_next)
     {
         if (it->parent != cur)
@@ -610,6 +604,22 @@ int sched_wait_reap(int *pid_out, int *code_out)
             break;
         }
     }
+    if (has_child_out != NULL)
+        *has_child_out = has_child;
+    return z;
+}
+
+int sched_wait_reap(int *pid_out, int *code_out)
+{
+    task_t *cur = sched_current();
+    task_t *z;
+    int has_child = 0;
+    uint64_t flags;
+
+    if (cur == NULL || pid_out == NULL || code_out == NULL)
+        return -1;
+    flags = spin_lock_irqsave(&g_sched_lock);
+    z = wait_take_zombie(cur, &has_child);
     if (z == NULL)
     {
         if (!has_child)
@@ -625,6 +635,29 @@ int sched_wait_reap(int *pid_out, int *code_out)
     cur->wait_child = 0;
     spin_unlock_irqrestore(&g_sched_lock, flags);
 
+    *pid_out = z->pid;
+    *code_out = z->exit_code;
+    task_destroy(z);
+    return *pid_out;
+}
+
+/* 非阻塞版：只收割已存在的僵尸，不改调用方状态，不挂等待位。
+ * >0=pid，0=有子但暂无僵尸，-1=无子。供 shell 主循环轮询用。 */
+int sched_wait_reap_nb(int *pid_out, int *code_out)
+{
+    task_t *cur = sched_current();
+    task_t *z;
+    int has_child = 0;
+    uint64_t flags;
+
+    if (cur == NULL || pid_out == NULL || code_out == NULL)
+        return -1;
+    flags = spin_lock_irqsave(&g_sched_lock);
+    z = wait_take_zombie(cur, &has_child);
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+
+    if (z == NULL)
+        return has_child ? 0 : -1;
     *pid_out = z->pid;
     *code_out = z->exit_code;
     task_destroy(z);
