@@ -122,6 +122,12 @@ long brk(void *addr)
     return r < 0 ? -1 : 0;
 }
 
+/* 匿名管道：fds[0]=读端，fds[1]=写端；成功 0，失败 -1 */
+long pipe(int fds[2])
+{
+    return syscall3(SYS_PIPE, (long)fds, 0, 0);
+}
+
 /* 堆顶增 incr 字节并返回旧堆顶；incr=0 查询；失败返回 (void *)-1 */
 void *sbrk(long incr)
 {
