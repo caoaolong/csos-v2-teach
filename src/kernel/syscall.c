@@ -12,6 +12,7 @@
 #include <kernel/user.h>
 #include <kernel/cpu.h>
 #include <kernel/string.h>
+#include <kernel/fs/pipe.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/vmm.h>
 
@@ -77,8 +78,54 @@ static void do_sys_write(exception_frame_t *frame)
     }
 
     /* vfs 层已按 O_RDONLY/O_WRONLY 做方向校验 */
-    n = vfs_write(f, (const void *)(uintptr_t)ubuf, len);
+    for (;;)
+    {
+        n = vfs_write(f, (const void *)(uintptr_t)ubuf, len);
+        if (n != VFS_ERR_AGAIN)
+            break;
+        yield();
+    }
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
+}
+
+/* pipe：rdi=int[2] 用户缓冲区，填入读/写 fd；成功 0，失败 -1 */
+static void do_sys_pipe(exception_frame_t *frame)
+{
+    uint64_t uaddr = frame->rdi;
+    vfs_file_t *rf = NULL;
+    vfs_file_t *wf = NULL;
+    int rfd;
+    int wfd;
+
+    if (!user_mem_ok(uaddr, sizeof(int) * 2))
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    if (pipe_create(&rf, &wf) != VFS_OK)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    rfd = fd_install(rf);
+    if (rfd < 0)
+    {
+        vfs_close(rf);
+        vfs_close(wf);
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    wfd = fd_install(wf);
+    if (wfd < 0)
+    {
+        fd_close(rfd); /* 级联 vfs_close(rf) */
+        vfs_close(wf);
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    ((int *)(uintptr_t)uaddr)[0] = rfd;
+    ((int *)(uintptr_t)uaddr)[1] = wfd;
+    frame->rax = 0;
 }
 
 static void do_sys_exit(exception_frame_t *frame)
@@ -403,7 +450,7 @@ typedef void (*sys_fn_t)(exception_frame_t *frame);
 /* execve 定义在表之后，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_BRK + 1] = {
+static const sys_fn_t g_sys_table[SYS_PIPE + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -418,6 +465,7 @@ static const sys_fn_t g_sys_table[SYS_BRK + 1] = {
     [SYS_GETPID] = do_sys_getpid,
     [SYS_GETPPID] = do_sys_getppid,
     [SYS_BRK] = do_sys_brk,
+    [SYS_PIPE] = do_sys_pipe,
 };
 
 /* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
@@ -515,7 +563,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_BRK || g_sys_table[num] == NULL)
+    if (num > SYS_PIPE || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);

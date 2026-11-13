@@ -23,6 +23,7 @@
 #define SYS_GETPID 12 /* -> 当前任务 pid */
 #define SYS_GETPPID 13 /* -> 父任务 pid，无父则 -1 */
 #define SYS_BRK 14 /* rdi=new_brk(0=查询) -> 调整后 brk/失败-1 */
+#define SYS_PIPE 15 /* rdi=int[2] out -> 0(填入读/写fd)/-1 */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */

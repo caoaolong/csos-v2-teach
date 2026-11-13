@@ -38,4 +38,7 @@ long getppid(void);
 long brk(void *addr);
 void *sbrk(long incr);
 
+/* 匿名管道：fds[0]=读端，fds[1]=写端；成功 0，失败 -1 */
+long pipe(int fds[2]);
+
 #endif /* CSOS_LIBC_UNISTD_H */
