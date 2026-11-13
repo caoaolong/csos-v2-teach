@@ -25,4 +25,10 @@ long fork(void);
 /* 阻塞回收一个已退出子进程：>0=子 pid（status 回填 exit 码，可传 0），-1=无子 */
 long wait(int *status);
 
+/* 取当前任务 pid；失败返回 -1 */
+long getpid(void);
+
+/* 取父任务 pid；无父返回 -1 */
+long getppid(void);
+
 #endif /* CSOS_LIBC_UNISTD_H */

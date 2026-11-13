@@ -20,6 +20,8 @@
 #define SYS_EXECVE 9 /* rdi=path, rsi=argv, rdx=envp -> 成功不返回/失败-1 */
 #define SYS_FORK 10 /* -> 子 pid/子 0/失败-1 */
 #define SYS_WAIT 11 /* rdi=status(out, 可 0) -> 子 pid/失败-1（阻塞到有子可收） */
+#define SYS_GETPID 12 /* -> 当前任务 pid */
+#define SYS_GETPPID 13 /* -> 父任务 pid，无父则 -1 */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */

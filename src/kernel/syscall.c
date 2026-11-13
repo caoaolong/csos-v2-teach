@@ -176,6 +176,23 @@ static void do_sys_wait(exception_frame_t *frame)
     }
 }
 
+/* getpid/getppid：取当前/父任务 pid；无父返回 -1 */
+static void do_sys_getpid(exception_frame_t *frame)
+{
+    task_t *cur = sched_current();
+
+    frame->rax = cur != NULL ? (uint64_t)cur->pid : (uint64_t)-1;
+}
+
+static void do_sys_getppid(exception_frame_t *frame)
+{
+    task_t *cur = sched_current();
+
+    frame->rax = (cur != NULL && cur->parent != NULL)
+                     ? (uint64_t)cur->parent->pid
+                     : (uint64_t)-1;
+}
+
 static void do_sys_sleep(exception_frame_t *frame)
 {
     msleep(frame->rdi);
@@ -306,7 +323,7 @@ typedef void (*sys_fn_t)(exception_frame_t *frame);
 /* execve 定义在表之后，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_WAIT + 1] = {
+static const sys_fn_t g_sys_table[SYS_GETPPID + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -318,6 +335,8 @@ static const sys_fn_t g_sys_table[SYS_WAIT + 1] = {
     [SYS_EXECVE] = do_sys_execve,
     [SYS_FORK] = do_sys_fork,
     [SYS_WAIT] = do_sys_wait,
+    [SYS_GETPID] = do_sys_getpid,
+    [SYS_GETPPID] = do_sys_getppid,
 };
 
 /* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
@@ -415,7 +434,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_WAIT || g_sys_table[num] == NULL)
+    if (num > SYS_GETPPID || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);

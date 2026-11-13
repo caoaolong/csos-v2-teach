@@ -93,3 +93,15 @@ long wait(int *status)
 {
     return syscall1(SYS_WAIT, (long)status);
 }
+
+/* 取当前任务 pid；失败返回 -1 */
+long getpid(void)
+{
+    return syscall1(SYS_GETPID, 0);
+}
+
+/* 取父任务 pid；无父返回 -1 */
+long getppid(void)
+{
+    return syscall1(SYS_GETPPID, 0);
+}
