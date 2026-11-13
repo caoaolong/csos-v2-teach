@@ -258,12 +258,14 @@ static void setup_kstack_and_enter(uint64_t rip)
     user_halt("FATAL: enter_user returned\n");
 }
 
-static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size)
+static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size,
+                              uint64_t *end_out)
 {
     const elf64_ehdr_t *e = (const elf64_ehdr_t *)img;
     const elf64_phdr_t *ph;
     uint16_t i;
     int n_load = 0;
+    uint64_t image_end = 0;
 
     if (check_ehdr(e, file_size) != 0)
         return 0;
@@ -301,6 +303,12 @@ static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size)
                         (unsigned long long)ph[i].p_vaddr,
                         (unsigned long long)ph[i].p_memsz);
             return 0;
+        }
+        {
+            uint64_t seg_end = align_up_u64(ph[i].p_vaddr + ph[i].p_memsz, PAGE_SIZE);
+
+            if (seg_end > image_end)
+                image_end = seg_end;
         }
 
         if (map_one_segment(ph[i].p_vaddr, ph[i].p_offset,
@@ -343,6 +351,8 @@ static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size)
         }
     }
 
+    if (end_out != NULL)
+        *end_out = image_end;
     return e->e_entry;
 }
 
@@ -363,12 +373,29 @@ static int load_and_check_elf(const char *kpath, uint8_t **img_out, uint64_t *si
     return 0;
 }
 
-static uint64_t map_loaded_elf(uint8_t *img, uint64_t file_size)
+static uint64_t map_loaded_elf(uint8_t *img, uint64_t file_size,
+                               uint64_t *end_out)
 {
-    uint64_t entry = map_elf_image(img, file_size);
+    uint64_t entry = map_elf_image(img, file_size, end_out);
 
     kfree(img);
     return entry;
+}
+
+/* 堆基址 = max(映像末端, 固定栈页顶），按页对齐；新建/exec 后 brk == base（空堆）。
+ * init 基址 0x40002000 已在栈页之上，display 基址 0x41000000 亦然，故堆恒跟在
+ * 映像末端之后，与映像/固定栈不重叠；fork 由 vmm_clone_user_range 连堆页一并拷贝。 */
+static void heap_reset_for_task(task_t *self, uint64_t image_end)
+{
+    uint64_t base = image_end;
+
+    if (base < USER_STACK_TOP)
+        base = USER_STACK_TOP;
+    base = align_up_u64(base, PAGE_SIZE);
+    if (base > USER_IMAGE_END)
+        base = USER_IMAGE_END;
+    self->heap_base = base;
+    self->heap_brk = base;
 }
 
 void user_enter_init(const char *init_path)
@@ -378,6 +405,7 @@ void user_enter_init(const char *init_path)
     uint8_t *img = NULL;
     uint64_t file_size = 0;
     uint64_t entry;
+    uint64_t image_end = 0;
 
     if (init_path == NULL || init_path[0] == '\0')
         user_halt("FATAL: empty init path\n");
@@ -396,13 +424,14 @@ void user_enter_init(const char *init_path)
     if (load_and_check_elf(init_path, &img, &file_size) != 0)
         user_halt("FATAL: load init failed\n");
 
-    entry = map_loaded_elf(img, file_size);
+    entry = map_loaded_elf(img, file_size, &image_end);
     if (entry == 0)
         user_halt("FATAL: ELF map init failed\n");
 
     fput_string("[USER] init '%s' mapped entry=0x%llx size=%llu\n",
                 init_path, (unsigned long long)entry,
                 (unsigned long long)file_size);
+    heap_reset_for_task(self, image_end);
     setup_kstack_and_enter(entry);
 }
 
@@ -492,6 +521,7 @@ int user_exec_replace(const char *kpath, char *const kargv[], int kargc,
     uint8_t *img = NULL;
     uint64_t file_size = 0;
     uint64_t entry;
+    uint64_t image_end = 0;
     void *stack_page;
 
     if (kpath == NULL || kpath[0] == '\0' || entry_out == NULL || rsp_out == NULL)
@@ -509,11 +539,12 @@ int user_exec_replace(const char *kpath, char *const kargv[], int kargc,
     fput_string("[USER] exec '%s'\n", kpath);
     unmap_user_range(USER_IMAGE_BASE, USER_IMAGE_END);
 
-    entry = map_loaded_elf(img, file_size);
+    entry = map_loaded_elf(img, file_size, &image_end);
     if (entry == 0)
         user_halt("FATAL: exec map image failed\n");
 
     stack_page = alloc_user_stack_page();
+    heap_reset_for_task(sched_current(), image_end);
 
     *entry_out = entry;
     *rsp_out = exec_setup_stack(stack_page, kargv, kargc, kenvp, kenvc);

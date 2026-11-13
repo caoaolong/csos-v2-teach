@@ -34,4 +34,8 @@ long getpid(void);
 /* 取父任务 pid；无父返回 -1 */
 long getppid(void);
 
+/* 堆顶管理：brk 设堆顶为 addr（成功 0/失败 -1），sbrk 增量调整并返回旧堆顶 */
+long brk(void *addr);
+void *sbrk(long incr);
+
 #endif /* CSOS_LIBC_UNISTD_H */

@@ -113,3 +113,29 @@ long getppid(void)
 {
     return syscall1(SYS_GETPPID, 0);
 }
+
+/* 堆顶设为 addr：成功返回 0，失败返回 -1 */
+long brk(void *addr)
+{
+    long r = syscall1(SYS_BRK, (long)addr);
+
+    return r < 0 ? -1 : 0;
+}
+
+/* 堆顶增 incr 字节并返回旧堆顶；incr=0 查询；失败返回 (void *)-1 */
+void *sbrk(long incr)
+{
+    long cur = syscall1(SYS_BRK, 0);
+    long req;
+
+    if (cur < 0)
+        return (void *)-1;
+    if (incr == 0)
+        return (void *)cur;
+    req = cur + incr;
+    if (req <= 0 || (incr > 0 && req < cur) || (incr < 0 && req > cur))
+        return (void *)-1; /* 回绕/越过零页：内核侧必拒，提前拦 */
+    if (syscall1(SYS_BRK, req) < 0)
+        return (void *)-1;
+    return (void *)cur;
+}

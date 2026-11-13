@@ -34,6 +34,8 @@ typedef struct task
     int pid;          /* 0=idle，1=init 起 */
     struct task *parent;     /* fork 父任务；init/内核任务为 NULL */
     uint64_t *pgdir;         /* 用户地址空间顶级表；内核任务为 NULL（用 master） */
+    uint64_t heap_base;      /* 用户堆下界（映像+固定栈页之上，按页对齐，只增不减直到 exec） */
+    uint64_t heap_brk;       /* 用户堆当前顶；已映射 == [heap_base, ALIGN_UP(heap_brk)) */
     void *kstack_page;       /* 用户任务的内核栈页（含 trap 帧） */
     uint64_t kstack_top;
     int exit_code;  /* ZOMBIE 时有效 */

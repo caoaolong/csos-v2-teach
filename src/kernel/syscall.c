@@ -10,6 +10,8 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/gfx/console.h>
 #include <kernel/user.h>
+#include <kernel/cpu.h>
+#include <kernel/string.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/vmm.h>
 
@@ -19,23 +21,6 @@
 #define MSR_FMASK 0xC0000084
 
 #define EFER_SCE (1ULL << 0) /* 允许 SYSCALL/SYSRET */
-
-static uint64_t rdmsr(uint32_t msr)
-{
-    uint32_t lo;
-    uint32_t hi;
-
-    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
-    return ((uint64_t)hi << 32) | lo;
-}
-
-static void wrmsr(uint32_t msr, uint64_t value)
-{
-    __asm__ volatile("wrmsr"
-                     :
-                     : "c"(msr), "a"((uint32_t)value), "d"((uint32_t)(value >> 32))
-                     : "memory");
-}
 
 void init_syscall()
 {
@@ -139,6 +124,8 @@ static void do_sys_fork(exception_frame_t *frame)
         return;
     }
     child->pgdir = pgdir;
+    child->heap_base = cur->heap_base;
+    child->heap_brk = cur->heap_brk;
     fd_clone_table(child, cur);
     task_enqueue(child);
     frame->rax = (uint64_t)child->pid;
@@ -338,12 +325,85 @@ static void do_sys_lseek(exception_frame_t *frame)
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
+/* brk：rdi=new_brk（0=查询当前值）；成功返回调整后 brk，失败返回 -1 */
+static void do_sys_brk(exception_frame_t *frame)
+{
+    task_t *cur = sched_current();
+    uint64_t new_brk = frame->rdi;
+    uint64_t old_brk;
+    uint64_t old_top;
+    uint64_t new_top;
+    uint64_t va;
+    uint64_t irqf;
+
+    if (cur == NULL || cur->pgdir == NULL)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    if (new_brk == 0)
+    {
+        frame->rax = cur->heap_brk;
+        return;
+    }
+    if (new_brk < cur->heap_base || new_brk > USER_IMAGE_END)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    old_brk = cur->heap_brk;
+    if (new_brk == old_brk)
+    {
+        frame->rax = old_brk;
+        return;
+    }
+    old_top = (old_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    new_top = (new_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    if (new_top == old_top)
+    {
+        cur->heap_brk = new_brk;
+        frame->rax = new_brk;
+        return;
+    }
+    irqf = irq_save();
+    if (new_top > old_top)
+    {
+        for (va = old_top; va < new_top; va += PAGE_SIZE)
+        {
+            uint64_t pa = alloc_page();
+
+            if (pa == PMM_INVALID_ADDR || pa == 0)
+                break;
+            kernel_memset((void *)(uintptr_t)pa, 0, (uint32_t)PAGE_SIZE);
+            if (map_page(va, pa, PTE_PRESENT | PTE_WRITABLE | PTE_USER) != 0)
+            {
+                free_page(pa);
+                break;
+            }
+        }
+        if (va != new_top)
+        {
+            unmap_user_range(old_top, va); /* 回滚本轮已映射页 */
+            irq_restore(irqf);
+            frame->rax = (uint64_t)-1;
+            return;
+        }
+    }
+    else
+    {
+        unmap_user_range(new_top, old_top);
+    }
+    irq_restore(irqf);
+    cur->heap_brk = new_brk;
+    frame->rax = new_brk;
+}
+
 typedef void (*sys_fn_t)(exception_frame_t *frame);
 
 /* execve 定义在表之后，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_GETPPID + 1] = {
+static const sys_fn_t g_sys_table[SYS_BRK + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -357,6 +417,7 @@ static const sys_fn_t g_sys_table[SYS_GETPPID + 1] = {
     [SYS_WAIT] = do_sys_wait,
     [SYS_GETPID] = do_sys_getpid,
     [SYS_GETPPID] = do_sys_getppid,
+    [SYS_BRK] = do_sys_brk,
 };
 
 /* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
@@ -454,7 +515,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_GETPPID || g_sys_table[num] == NULL)
+    if (num > SYS_BRK || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);
