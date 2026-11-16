@@ -93,11 +93,8 @@ void task_enqueue(task_t *t);
 /* 当前任务退出为僵尸，唤醒等待的父任务，不返回 */
 void task_exit_current(int code) __attribute__((noreturn));
 
-/* 回收一个已退出子任务：>0=pid，0=有子但无僵尸（调用方 yield 重试），-1=无子 */
+/* 回收一个已退出子任务：>0=pid；0=有子但无僵尸（调用方 yield 重试）；-1=无子 */
 int sched_wait_reap(int *pid_out, int *code_out);
-
-/* 非阻塞版：只收割已存在的僵尸，不改调用方状态；>0=pid，0=暂无僵尸，-1=无子 */
-int sched_wait_reap_nb(int *pid_out, int *code_out);
 
 /* 标记 init 任务（pid 固定 1，孤儿的 reparent 目标） */
 void sched_set_init_task(task_t *t);

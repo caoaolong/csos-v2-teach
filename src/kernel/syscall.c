@@ -178,36 +178,21 @@ static void do_sys_fork(exception_frame_t *frame)
     frame->rax = (uint64_t)child->pid;
 }
 
-/* wait：rdi=status(out,可0)，rsi=flags(仅WNOHANG)； */
+/* wait：rdi=status(out,可0)；rsi 必须为 0（flags 预留给未来 WNOHANG） */
 static void do_sys_wait(exception_frame_t *frame)
 {
     uint64_t ustatus = frame->rdi;
-    uint64_t flags = frame->rsi;
     int pid;
     int code;
 
-    if ((flags & ~(uint64_t)WNOHANG) != 0)
+    if (frame->rsi != 0)
     {
-        frame->rax = (uint64_t)-1;
+        frame->rax = (uint64_t)-EINVAL;
         return;
     }
     if (ustatus != 0 && !user_mem_ok(ustatus, sizeof(int)))
     {
-        frame->rax = (uint64_t)-1;
-        return;
-    }
-    if ((flags & WNOHANG) != 0)
-    {
-        int r = sched_wait_reap_nb(&pid, &code);
-
-        if (r <= 0)
-        {
-            frame->rax = (uint64_t)r;
-            return;
-        }
-        if (ustatus != 0)
-            *(int *)(uintptr_t)ustatus = code;
-        frame->rax = (uint64_t)pid;
+        frame->rax = (uint64_t)-EINVAL;
         return;
     }
     for (;;)
@@ -216,7 +201,7 @@ static void do_sys_wait(exception_frame_t *frame)
 
         if (r < 0)
         {
-            frame->rax = (uint64_t)-1;
+            frame->rax = (uint64_t)-ECHILD;
             return;
         }
         if (r > 0)

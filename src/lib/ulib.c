@@ -1,5 +1,8 @@
 #include <abi.h>
 #include "unistd.h"
+#include "errno.h"
+
+int errno; /* wait 失败时由 libc 按内核回传填值；其余调用暂不写 */
 
 static long syscall1(long num, long arg)
 {
@@ -88,18 +91,18 @@ long fork(void)
     return syscall1(SYS_FORK, 0);
 }
 
-/* 阻塞回收一个已退出子进程：status 回填 exit 码（可传 0）；无子返回 -1 */
+/* 阻塞回收一个已退出子进程：status 回填 exit 码（可传 0）；
+ * 成功返回子 pid，无子返回 -1（errno=ECHILD）。 */
 long wait(int *status)
 {
-    return waitpid(-1, status, 0);
-}
+    long r = syscall3(SYS_WAIT, (long)status, 0, 0);
 
-/* 回收子进程：仅支持 pid=-1（任意子进程）；options 仅支持 WNOHANG */
-long waitpid(int pid, int *status, int options)
-{
-    if (pid != -1)
+    if (r < 0)
+    {
+        errno = (int)-r; /* 内核已按 -errno 回传 */
         return -1;
-    return syscall3(SYS_WAIT, (long)status, (long)options, 0);
+    }
+    return r;
 }
 
 /* 取当前任务 pid；失败返回 -1 */

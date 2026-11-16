@@ -9,21 +9,21 @@
  */
 
 /* 系统调用号：rdi/rsi/rdx 传参，rax 传调用号兼收返回值 */
-#define SYS_WRITE 1 /* rdi=fd, rsi=buf, rdx=len -> 写入字节数/-1 */
-#define SYS_EXIT 2  /* rdi=code -> 不返回 */
-#define SYS_SLEEP 3 /* rdi=ms -> 0 */
-#define SYS_READ 4  /* rdi=fd, rsi=buf, rdx=len -> 读到字节数(阻塞)/-1 */
-#define SYS_OPEN 5  /* rdi=path, rsi=flags(O_*), rdx=mode(保留) -> fd/-1 */
-#define SYS_CLOSE 6 /* rdi=fd -> 0/-1 */
-#define SYS_DUP2 7  /* rdi=oldfd, rsi=newfd -> newfd/-1 */
-#define SYS_LSEEK 8 /* rdi=fd, rsi=offset, rdx=whence(SEEK_*) -> 新位置/-1 */
-#define SYS_EXECVE 9 /* rdi=path, rsi=argv, rdx=envp -> 成功不返回/失败-1 */
-#define SYS_FORK 10 /* -> 子 pid/子 0/失败-1 */
-#define SYS_WAIT 11 /* rdi=status(out,可0),rsi=flags(仅WNOHANG) -> pid/0(WNOHANG无僵尸)/-1 */
-#define SYS_GETPID 12 /* -> 当前任务 pid */
+#define SYS_WRITE 1    /* rdi=fd, rsi=buf, rdx=len -> 写入字节数/-1 */
+#define SYS_EXIT 2     /* rdi=code -> 不返回 */
+#define SYS_SLEEP 3    /* rdi=ms -> 0 */
+#define SYS_READ 4     /* rdi=fd, rsi=buf, rdx=len -> 读到字节数(阻塞)/-1 */
+#define SYS_OPEN 5     /* rdi=path, rsi=flags(O_*), rdx=mode(保留) -> fd/-1 */
+#define SYS_CLOSE 6    /* rdi=fd -> 0/-1 */
+#define SYS_DUP2 7     /* rdi=oldfd, rsi=newfd -> newfd/-1 */
+#define SYS_LSEEK 8    /* rdi=fd, rsi=offset, rdx=whence(SEEK_*) -> 新位置/-1 */
+#define SYS_EXECVE 9   /* rdi=path, rsi=argv, rdx=envp -> 成功不返回/失败-1 */
+#define SYS_FORK 10    /* -> 子 pid/子 0/失败-1 */
+#define SYS_WAIT 11    /* rdi=status(out,可0),rsi=0(保留) -> pid/-ECHILD */
+#define SYS_GETPID 12  /* -> 当前任务 pid */
 #define SYS_GETPPID 13 /* -> 父任务 pid，无父则 -1 */
-#define SYS_BRK 14 /* rdi=new_brk(0=查询) -> 调整后 brk/失败-1 */
-#define SYS_PIPE 15 /* rdi=int[2] out -> 0(填入读/写fd)/-1 */
+#define SYS_BRK 14     /* rdi=new_brk(0=查询) -> 调整后 brk/失败-1 */
+#define SYS_PIPE 15    /* rdi=int[2] out -> 0(填入读/写fd)/-1 */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */
@@ -44,7 +44,9 @@
 #define SEEK_CUR 1
 #define SEEK_END 2
 
-/* wait flags：仅 WNOHANG（非阻塞轮询） */
-#define WNOHANG 1
+/* 错误号（取值与 Linux 兼容）：syscall 以负值回传，libc 填 errno 后统一回 -1 */
+#define EINTR 4   /* 被信号打断（暂无信号机制，预留） */
+#define EINVAL 22 /* 非法参数 */
+#define ECHILD 10 /* 无子进程可等 */
 
 #endif /* CSOS_ABI_H */

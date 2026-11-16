@@ -462,6 +462,16 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
 
     g_current[cpu] = next;
     next_rsp = next->rsp;
+    if (next != cur)
+    {
+        /* 调试开关：只在真正换任务时打一行，避免每 tick 刷屏。
+         * 要关掉就注释掉这个 if 块。 */
+        fput_string("[SCHED] switch %s(%d) -> %s(%d)\n",
+                    cur->name != NULL ? cur->name : "?",
+                    cur->pid,
+                    next->name != NULL ? next->name : "?",
+                    next->pid);
+    }
     irq_restore(irqf);
     return next_rsp;
 }
@@ -559,7 +569,7 @@ void task_exit_current(int code)
     flags = spin_lock_irqsave(&g_sched_lock);
     cur->state = TASK_ZOMBIE;
     cur->exit_code = code;
-    /* orphans are reparented to init (NULL if init itself exits) */
+
     for (it = g_all_tasks; it != NULL; it = it->all_next)
         if (it->parent == cur)
             it->parent = (cur == g_init_task) ? NULL : g_init_task;
@@ -609,6 +619,7 @@ static task_t *wait_take_zombie(task_t *cur, int *has_child_out)
     return z;
 }
 
+/* 阻塞回收僵尸进程 */
 int sched_wait_reap(int *pid_out, int *code_out)
 {
     task_t *cur = sched_current();
@@ -635,29 +646,6 @@ int sched_wait_reap(int *pid_out, int *code_out)
     cur->wait_child = 0;
     spin_unlock_irqrestore(&g_sched_lock, flags);
 
-    *pid_out = z->pid;
-    *code_out = z->exit_code;
-    task_destroy(z);
-    return *pid_out;
-}
-
-/* 非阻塞版：只收割已存在的僵尸，不改调用方状态，不挂等待位。
- * >0=pid，0=有子但暂无僵尸，-1=无子。供 shell 主循环轮询用。 */
-int sched_wait_reap_nb(int *pid_out, int *code_out)
-{
-    task_t *cur = sched_current();
-    task_t *z;
-    int has_child = 0;
-    uint64_t flags;
-
-    if (cur == NULL || pid_out == NULL || code_out == NULL)
-        return -1;
-    flags = spin_lock_irqsave(&g_sched_lock);
-    z = wait_take_zombie(cur, &has_child);
-    spin_unlock_irqrestore(&g_sched_lock, flags);
-
-    if (z == NULL)
-        return has_child ? 0 : -1;
     *pid_out = z->pid;
     *code_out = z->exit_code;
     task_destroy(z);

@@ -82,7 +82,7 @@ void kernel_main(boot_info_t *boot_info)
     init_partitions();
     init_mounts();
 
-    if (task_create_pinned(user_task, "user") == NULL)
+    if (task_create_pinned(user_task, "init") == NULL)
         panic("FATAL: user task_create failed\n");
 
     __asm__ volatile("sti");

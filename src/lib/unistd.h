@@ -22,11 +22,9 @@ long execve(const char *path, char *const argv[], char *const envp[]);
 /* 复制当前任务：父返回子 pid，子返回 0，失败返回 -1 */
 long fork(void);
 
-/* 阻塞回收一个已退出子进程：>0=子 pid（status 回填 exit 码，可传 0），-1=无子 */
+/* 阻塞回收一个已退出子进程：成功返回子 pid（status 回填 exit 码，可传 0），
+ * 无子返回 -1（errno=ECHILD） */
 long wait(int *status);
-
-/* 回收子进程（仅支持 pid=-1，即任意子进程）：options 仅支持 WNOHANG */
-long waitpid(int pid, int *status, int options);
 
 /* 取当前任务 pid；失败返回 -1 */
 long getpid(void);
