@@ -16,6 +16,7 @@
 #include <kernel/apic.h>
 #include <kernel/apic/ioapic.h>
 #include <kernel/kbd.h>
+#include <kernel/mouse.h>
 #include <kernel/timer.h>
 #include <kernel/sched.h>
 #include <kernel/smp.h>
@@ -69,6 +70,7 @@ void kernel_main(boot_info_t *boot_info)
     init_lapic();
     init_ioapic();
     init_kbd();
+    init_mouse();
     init_apic_timer(APIC_TIMER_DEFAULT_HZ);
     init_sched();
     init_smp();

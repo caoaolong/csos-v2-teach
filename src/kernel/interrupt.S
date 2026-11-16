@@ -84,4 +84,6 @@ interrupt_handler control,          21,     1, 0
 interrupt_handler timer,            32,     0, 1
 interrupt_handler kbd,              33,     0, 0
 interrupt_handler yield,            34,     0, 1
+/* mouse: IRQ12 -> 0x2c */
+interrupt_handler mouse,            44,     0, 0
 interrupt_handler spurious,         255,    0, 0

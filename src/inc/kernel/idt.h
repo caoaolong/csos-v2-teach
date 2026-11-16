@@ -116,6 +116,7 @@ extern void interrupt_handler_virtual(void);
 extern void interrupt_handler_control(void);
 extern void interrupt_handler_timer(void);
 extern void interrupt_handler_kbd(void);
+extern void interrupt_handler_mouse(void);
 extern void interrupt_handler_yield(void);
 extern void interrupt_handler_spurious(void);
 
