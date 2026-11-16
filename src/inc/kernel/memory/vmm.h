@@ -12,7 +12,8 @@
 #define PTE_ACCESSED (1ULL << 5)
 #define PTE_DIRTY (1ULL << 6)
 #define PTE_HUGE (1ULL << 7) /* PD/PDPT 大页 */
-#define PTE_GLOBAL (1ULL << 8)
+#define PTE_GLOBAL (1ULL << 8) /* 本 OS 约定：MMIO 借用页标记。拆映射/回收时
+                                * 只清表项不清算物理页（显存等非 RAM 无归还概念） */
 #define PTE_NX (1ULL << 63)
 
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
@@ -48,6 +49,11 @@ void vmm_free_user_pml4(uint64_t *pml4, uint64_t start, uint64_t end);
 /* 拆除 [start, end) 内 4K 用户页映射并归还物理页（页表页暂不回收）。
  * 仅处理 leaf 且置位 PTE_USER 的表项，内核页/大页一律跳过。 */
 void unmap_user_range(uint64_t start, uint64_t end);
+
+/* 显存描述（无显存时全 0），供 fb0 设备与 fbmap 用；任一指针可传 NULL 跳过 */
+void vmm_framebuffer_info(uint64_t *base_out, uint64_t *size_out,
+                          uint32_t *width_out, uint32_t *height_out,
+                          uint32_t *pitch_out);
 
 uint64_t read_cr2();
 uint64_t read_cr3();

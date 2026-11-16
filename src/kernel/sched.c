@@ -462,16 +462,6 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
 
     g_current[cpu] = next;
     next_rsp = next->rsp;
-    if (next != cur)
-    {
-        /* 调试开关：只在真正换任务时打一行，避免每 tick 刷屏。
-         * 要关掉就注释掉这个 if 块。 */
-        fput_string("[SCHED] switch %s(%d) -> %s(%d)\n",
-                    cur->name != NULL ? cur->name : "?",
-                    cur->pid,
-                    next->name != NULL ? next->name : "?",
-                    next->pid);
-    }
     irq_restore(irqf);
     return next_rsp;
 }

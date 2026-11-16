@@ -159,6 +159,79 @@ static void do_sys_mkfifo(exception_frame_t *frame)
         frame->rax = (uint64_t)-EINVAL;
 }
 
+/* fbmap：将整块显存映射进当前任务地址空间 [USER_FB_BASE, +实际大小），
+ * 返回像素起点虚地址（phys 未页对齐时带偏移），失败 -1。
+ * 只映射 GOP 上报的显存段（内核校验 phys 范围，不接受任意物理地址）；
+ * 幂等，可重复调用；fork 连页拷贝继承，exec 清窗后下次调用重建。 */
+static void do_sys_fbmap(exception_frame_t *frame)
+{
+    task_t *cur = sched_current();
+    uint64_t base;
+    uint64_t size;
+    uint64_t pa_start;
+    uint64_t off;
+    uint64_t map_len;
+    uint64_t va;
+    uint64_t irqf;
+
+    if (cur == NULL || cur->pgdir == NULL)
+    {
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    vmm_framebuffer_info(&base, &size, NULL, NULL, NULL);
+    if (base == 0 || size == 0)
+    {
+        frame->rax = (uint64_t)-1; /* 无显存的机器 */
+        return;
+    }
+    pa_start = base & ~(PAGE_SIZE - 1);
+    off = base - pa_start;
+    map_len = (off + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    if (off + size < off || off + size > USER_FB_MAX_SIZE)
+    {
+        frame->rax = (uint64_t)-1; /* 显存超出预留窗 */
+        return;
+    }
+    irqf = irq_save();
+    for (va = USER_FB_BASE; va < USER_FB_BASE + map_len; va += PAGE_SIZE)
+    {
+        /* PTE_GLOBAL：MMIO 借用页，unmap/回收时只拆映射不清算物理页 */
+        if (map_page(va, pa_start + (va - USER_FB_BASE),
+                     PTE_PRESENT | PTE_WRITABLE | PTE_USER |
+                         PTE_WRITE_THROUGH | PTE_GLOBAL) != 0)
+            break;
+    }
+    if (va != USER_FB_BASE + map_len)
+    {
+        unmap_user_range(USER_FB_BASE, va); /* 回滚本轮已映射页（只拆映射，不释 MMIO） */
+        irq_restore(irqf);
+        frame->rax = (uint64_t)-1;
+        return;
+    }
+    irq_restore(irqf);
+    frame->rax = USER_FB_BASE + off;
+}
+
+/* fbctl：屏幕归属仲裁。acquire=display 接管（console 停写屏/tick/光标，
+ * 文字模型冻结，输出只走串口）；release=交还 console（按模型重画恢复）。
+ * panic 页走独立路径，无条件夺回，不经过这里。 */
+static void do_sys_fbctl(exception_frame_t *frame)
+{
+    uint64_t op = frame->rdi;
+
+    if (op == FB_ACQUIRE)
+        fb_console_detach();
+    else if (op == FB_RELEASE)
+        fb_console_attach();
+    else
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    frame->rax = 0;
+}
+
 static void do_sys_exit(exception_frame_t *frame)
 {
     fput_string("[USER] task '%s' exit(%llu)\n",
@@ -388,7 +461,9 @@ static void do_sys_lseek(exception_frame_t *frame)
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
-/* brk：rdi=new_brk（0=查询当前值）；成功返回调整后 brk，失败返回 -1 */
+/* brk：rdi=new_brk（0=查询当前值）；成功返回调整后 brk，失败返回 -1。
+ * 堆 == [heap_base, ALIGN_UP(heap_brk)) 必已映射，上界卡在 USER_FB_BASE
+ * （顶部 8MB 是显存映射窗，堆不得进入）。 */
 static void do_sys_brk(exception_frame_t *frame)
 {
     task_t *cur = sched_current();
@@ -409,7 +484,7 @@ static void do_sys_brk(exception_frame_t *frame)
         frame->rax = cur->heap_brk;
         return;
     }
-    if (new_brk < cur->heap_base || new_brk > USER_IMAGE_END)
+    if (new_brk < cur->heap_base || new_brk > USER_FB_BASE)
     {
         frame->rax = (uint64_t)-1;
         return;
@@ -466,7 +541,7 @@ typedef void (*sys_fn_t)(exception_frame_t *frame);
 /* execve 定义在表之后，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_MKFIFO + 1] = {
+static const sys_fn_t g_sys_table[SYS_FBCTL + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -483,6 +558,8 @@ static const sys_fn_t g_sys_table[SYS_MKFIFO + 1] = {
     [SYS_BRK] = do_sys_brk,
     [SYS_PIPE] = do_sys_pipe,
     [SYS_MKFIFO] = do_sys_mkfifo,
+    [SYS_FBMAP] = do_sys_fbmap,
+    [SYS_FBCTL] = do_sys_fbctl,
 };
 
 /* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
@@ -580,7 +657,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_MKFIFO || g_sys_table[num] == NULL)
+    if (num > SYS_FBCTL || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);

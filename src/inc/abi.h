@@ -25,6 +25,12 @@
 #define SYS_BRK 14     /* rdi=new_brk(0=查询) -> 调整后 brk/失败-1 */
 #define SYS_PIPE 15    /* rdi=int[2] out -> 0(填入读/写fd)/-1 */
 #define SYS_MKFIFO 16  /* rdi=path -> 0/-errno */
+#define SYS_FBMAP 17   /* -> 显存用户态基址/-1（幂等，可重复调用） */
+#define SYS_FBCTL 18   /* rdi=op(0=交还console,1=display接管) -> 0/-EINVAL */
+
+/* fbctl 操作码 */
+#define FB_RELEASE 0 /* 屏幕交还 console（按文字模型重画） */
+#define FB_ACQUIRE 1 /* display 接管屏幕（console 只走串口） */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */

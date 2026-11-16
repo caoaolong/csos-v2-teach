@@ -96,6 +96,13 @@ static uint64_t *get_or_alloc_table(uint64_t *parent, uint64_t index)
     return (uint64_t *)page;
 }
 
+/* 显存描述（map_framebuffer 时记录；无显存时全 0），供 fb0 设备与 fbmap 用 */
+static uint64_t g_fb_base;
+static uint64_t g_fb_size;
+static uint32_t g_fb_width;
+static uint32_t g_fb_height;
+static uint32_t g_fb_pitch;
+
 static int map_framebuffer(boot_info_t *boot)
 {
     uint64_t base;
@@ -114,6 +121,12 @@ static int map_framebuffer(boot_info_t *boot)
            (uint64_t)boot->framebuffer_height * 4ULL;
     end = (boot->framebuffer_base + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
+    g_fb_base = boot->framebuffer_base;
+    g_fb_size = size;
+    g_fb_width = boot->framebuffer_width;
+    g_fb_height = boot->framebuffer_height;
+    g_fb_pitch = boot->framebuffer_pixels_per_scanline * 4u;
+
     for (pa = base; pa < end; pa += PAGE_SIZE)
     {
         if (map_page(pa, pa, PTE_PRESENT | PTE_WRITABLE | PTE_WRITE_THROUGH) != 0)
@@ -127,6 +140,22 @@ static int map_framebuffer(boot_info_t *boot)
                 boot->framebuffer_base, size,
                 boot->framebuffer_width, boot->framebuffer_height);
     return 0;
+}
+
+void vmm_framebuffer_info(uint64_t *base_out, uint64_t *size_out,
+                          uint32_t *width_out, uint32_t *height_out,
+                          uint32_t *pitch_out)
+{
+    if (base_out != NULL)
+        *base_out = g_fb_base;
+    if (size_out != NULL)
+        *size_out = g_fb_size;
+    if (width_out != NULL)
+        *width_out = g_fb_width;
+    if (height_out != NULL)
+        *height_out = g_fb_height;
+    if (pitch_out != NULL)
+        *pitch_out = g_fb_pitch;
 }
 
 int map_page_in(uint64_t *pml4, uint64_t vaddr, uint64_t paddr, uint64_t flags)
@@ -239,7 +268,8 @@ void unmap_user_range(uint64_t start, uint64_t end)
         e = pt[(va >> 12) & 0x1FF];
         if (!(e & PTE_PRESENT) || !(e & PTE_USER) || (e & PTE_HUGE))
             continue;
-        free_page(e & PTE_ADDR_MASK);
+        if (!(e & PTE_GLOBAL))
+            free_page(e & PTE_ADDR_MASK); /* GLOBAL=MMIO 借用页：只拆映射，不归还 */
         pt[(va >> 12) & 0x1FF] = 0;
         invlpg(va);
     }
@@ -415,6 +445,8 @@ int vmm_clone_user_range(uint64_t *dst_pml4, uint64_t *src_pml4,
 
             if (!(le & PTE_PRESENT) || (le & PTE_HUGE))
                 continue;
+            if (le & PTE_GLOBAL)
+                continue; /* MMIO 借用页不克隆：子任务按需 fbmap() 重建 */
             if (!(le & PTE_USER))
             {
                 dpt[li] = le; /* 非用户页：共享映射，不归还 */
@@ -472,8 +504,9 @@ void vmm_free_user_pml4(uint64_t *pml4, uint64_t start, uint64_t end)
                         {
                             uint64_t le = pt[li];
 
-                            if ((le & PTE_PRESENT) && (le & PTE_USER) && !(le & PTE_HUGE))
-                                free_page(le & PTE_ADDR_MASK);
+                            if ((le & PTE_PRESENT) && (le & PTE_USER) &&
+                                !(le & PTE_HUGE) && !(le & PTE_GLOBAL))
+                                free_page(le & PTE_ADDR_MASK); /* GLOBAL=MMIO 借用页不归还 */
                         }
                         free_page((uint64_t)(uintptr_t)pt);
                     }

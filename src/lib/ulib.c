@@ -156,6 +156,20 @@ long mkfifo(const char *path, int mode)
     return 0;
 }
 
+/* 整块显存映射进本任务：返回像素起点虚地址，失败返回 (void *)-1 */
+void *fbmap(void)
+{
+    long r = syscall1(SYS_FBMAP, 0);
+
+    return r < 0 ? (void *)-1 : (void *)r;
+}
+
+/* 屏幕归属仲裁：成功 0，失败 -1 */
+long fbctl(int op)
+{
+    return syscall1(SYS_FBCTL, (long)op) < 0 ? -1 : 0;
+}
+
 /* 堆顶增 incr 字节并返回旧堆顶；incr=0 查询；失败返回 (void *)-1 */
 void *sbrk(long incr)
 {

@@ -5,11 +5,13 @@
 #include <kernel/dev/mem_dev.h>
 #include <kernel/dev/timer_dev.h>
 #include <kernel/dev/console_dev.h>
+#include <kernel/dev/fb_dev.h>
 
 void init_devices()
 {
     init_serial_dev();
     init_console_dev();
+    init_fb_dev();
     init_ata_dev();
     init_kbd_dev();
     init_mem_dev();

@@ -310,6 +310,13 @@ static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size,
             if (seg_end > image_end)
                 image_end = seg_end;
         }
+        if (ph[i].p_vaddr + ph[i].p_memsz > USER_FB_BASE)
+        {
+            fput_string("[USER] ELF overlaps fb window [0x%llx, 0x%llx)\n",
+                        (unsigned long long)USER_FB_BASE,
+                        (unsigned long long)USER_IMAGE_END);
+            return 0;
+        }
 
         if (map_one_segment(ph[i].p_vaddr, ph[i].p_offset,
                             ph[i].p_filesz, ph[i].p_memsz,
@@ -392,8 +399,8 @@ static void heap_reset_for_task(task_t *self, uint64_t image_end)
     if (base < USER_STACK_TOP)
         base = USER_STACK_TOP;
     base = align_up_u64(base, PAGE_SIZE);
-    if (base > USER_IMAGE_END)
-        base = USER_IMAGE_END;
+    if (base > USER_FB_BASE)
+        base = USER_FB_BASE; /* 映像异常庞大时：堆让出整个显存窗，brk 自然失败 */
     self->heap_base = base;
     self->heap_brk = base;
 }

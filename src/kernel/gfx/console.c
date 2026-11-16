@@ -26,6 +26,7 @@ static uint32_t s_top;    /* 文本区首像素行 */
 static uint32_t s_cx;     /* 光标列 */
 static uint32_t s_cy;     /* 光标行 */
 static int s_ready;       /* 初始化完成标志（1 才可输出） */
+static int s_detached;    /* 屏幕已交 display：写屏/tick/光标全停，只走串口 */
 static spinlock_t s_lock = SPINLOCK_INIT;
 
 static char *s_text;
@@ -460,7 +461,7 @@ void fb_console_write(const void *buf, uint64_t len)
         return;
 
     flags = spin_lock_irqsave(&s_lock);
-    if (!s_ready)
+    if (!s_ready || s_detached)
     {
         spin_unlock_irqrestore(&s_lock, flags);
         return;
@@ -479,7 +480,7 @@ void fb_console_tick()
     uint64_t now;
 
     flags = spin_lock_irqsave(&s_lock);
-    if (!s_ready)
+    if (!s_ready || s_detached)
     {
         spin_unlock_irqrestore(&s_lock, flags);
         return;
@@ -518,12 +519,54 @@ void fb_console_clear_full()
     uint64_t flags;
 
     flags = spin_lock_irqsave(&s_lock);
-    if (!s_ready)
+    if (!s_ready || s_detached)
     {
         spin_unlock_irqrestore(&s_lock, flags);
         return;
     }
     con_reset_full_locked(s_bg);
+    con_cursor_restart_locked();
+    spin_unlock_irqrestore(&s_lock, flags);
+}
+
+/* 按文字模型重画整个文本区：attach 时调用，把 display 画过的地方恢复 */
+static void con_repaint_locked()
+{
+    uint32_t r;
+    uint32_t c;
+
+    con_fill(s_top, s_height, s_bg);
+    for (r = 0; r < s_rows; r++)
+        for (c = 0; c < s_cols; c++)
+            con_draw_locked(c * FONT_W, s_top + r * FONT_H,
+                            fb_font_glyph(con_cell_char_locked(c, r)));
+}
+
+void fb_console_detach()
+{
+    uint64_t flags;
+
+    flags = spin_lock_irqsave(&s_lock);
+    if (s_ready)
+    {
+        con_cursor_hide_locked(); /* 擦掉反白光标块，别留在 display 画面上 */
+        s_detached = 1;
+    }
+    spin_unlock_irqrestore(&s_lock, flags);
+}
+
+void fb_console_attach()
+{
+    uint64_t flags;
+
+    flags = spin_lock_irqsave(&s_lock);
+    if (!s_ready)
+    {
+        spin_unlock_irqrestore(&s_lock, flags);
+        return;
+    }
+    s_detached = 0;
+    con_repaint_locked();
     con_cursor_restart_locked();
     spin_unlock_irqrestore(&s_lock, flags);
 }
@@ -593,6 +636,7 @@ void fb_console_panic_page(const char *title, const char *msg)
         spin_unlock_irqrestore(&s_lock, flags);
         return;
     }
+    s_detached = 0; /* panic 无条件夺回屏幕 */
 
     con_reset_full_locked(fb_pack_pixel(PANIC_BG_RGB, s_format));
     /* 错误页不闪光标：关使能并确保已擦除（reset 已清 phase） */
@@ -647,7 +691,7 @@ void fb_console_puts(const char *s)
         return;
 
     flags = spin_lock_irqsave(&s_lock);
-    if (!s_ready)
+    if (!s_ready || s_detached)
     {
         spin_unlock_irqrestore(&s_lock, flags);
         return;
