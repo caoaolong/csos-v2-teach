@@ -24,6 +24,7 @@
 #define SYS_GETPPID 13 /* -> 父任务 pid，无父则 -1 */
 #define SYS_BRK 14     /* rdi=new_brk(0=查询) -> 调整后 brk/失败-1 */
 #define SYS_PIPE 15    /* rdi=int[2] out -> 0(填入读/写fd)/-1 */
+#define SYS_MKFIFO 16  /* rdi=path -> 0/-errno */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */
@@ -46,7 +47,10 @@
 
 /* 错误号（取值与 Linux 兼容）：syscall 以负值回传，libc 填 errno 后统一回 -1 */
 #define EINTR 4   /* 被信号打断（暂无信号机制，预留） */
+#define ENOENT 2  /* 无此文件或目录 */
 #define EINVAL 22 /* 非法参数 */
+#define ENOMEM 12 /* 内存不足 */
+#define EEXIST 17 /* 已存在（mkfifo 撞名） */
 #define ECHILD 10 /* 无子进程可等 */
 
 #endif /* CSOS_ABI_H */

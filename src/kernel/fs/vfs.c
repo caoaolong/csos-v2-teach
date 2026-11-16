@@ -485,6 +485,33 @@ int vfs_rmdir(const char *path)
     return rc;
 }
 
+int vfs_mkfifo(const char *path)
+{
+    char norm[VFS_PATH_MAX];
+    vfs_mount_t *m;
+    const char *rel;
+    int rc;
+
+    if (!g_vfs_ready || !path)
+        return VFS_ERR_INVAL;
+    rc = vfs_locate(path, norm, sizeof(norm), &m, &rel);
+    if (rc != VFS_OK)
+        return rc;
+    if (rel[0] == '\0')
+    {
+        vfs_unpin(m);
+        return VFS_ERR_EXIST; /* 挂载点本身已存在 */
+    }
+    if (!m->drv->mkfifo)
+    {
+        vfs_unpin(m);
+        return VFS_ERR_NOTSUP; /* 如 fat32/ext4：盘上格式无 fifo */
+    }
+    rc = m->drv->mkfifo(m, rel);
+    vfs_unpin(m);
+    return rc;
+}
+
 int vfs_opendir(const char *path, vfs_dir_t **out)
 {
     char norm[VFS_PATH_MAX];

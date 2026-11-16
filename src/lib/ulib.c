@@ -131,6 +131,31 @@ long pipe(int fds[2])
     return syscall3(SYS_PIPE, (long)fds, 0, 0);
 }
 
+static long syscall2(long num, long a, long b)
+{
+    long ret;
+
+    __asm__ volatile(
+        "syscall"
+        : "=a"(ret)
+        : "a"(num), "D"(a), "S"(b)
+        : "rcx", "r11", "memory");
+    return ret;
+}
+
+/* 命名管道：在 /pipe 下建节点；成功 0，失败 -1 并填 errno */
+long mkfifo(const char *path, int mode)
+{
+    long r = syscall2(SYS_MKFIFO, (long)path, (long)mode);
+
+    if (r < 0)
+    {
+        errno = (int)-r; /* 内核已按 -errno 回传 */
+        return -1;
+    }
+    return 0;
+}
+
 /* 堆顶增 incr 字节并返回旧堆顶；incr=0 查询；失败返回 (void *)-1 */
 void *sbrk(long incr)
 {

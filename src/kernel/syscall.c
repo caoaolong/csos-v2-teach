@@ -51,6 +51,9 @@ static int user_mem_ok(uint64_t vaddr, uint64_t size)
     return 1;
 }
 
+/* 用户路径逐字节拷入内核栈缓冲（带越界检查），要求 NUL 结尾；定义在后，先声明 */
+static int copy_path_from_user(uint64_t upath, char *kpath, uint32_t cap);
+
 static void do_sys_write(exception_frame_t *frame)
 {
     vfs_file_t *f;
@@ -126,6 +129,34 @@ static void do_sys_pipe(exception_frame_t *frame)
     ((int *)(uintptr_t)uaddr)[0] = rfd;
     ((int *)(uintptr_t)uaddr)[1] = wfd;
     frame->rax = 0;
+}
+
+/* mkfifo：rdi=path（座位在 pipefs /pipe 下，如 "/pipe/log"）；
+ * 成功 0，失败回负错误码（-EEXIST/-ENOENT/-ENOMEM/-EINVAL）。 */
+static void do_sys_mkfifo(exception_frame_t *frame)
+{
+    char kpath[VFS_PATH_MAX];
+    int rc;
+
+    if (copy_path_from_user(frame->rdi, kpath, (uint32_t)sizeof(kpath)) != 0)
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    rc = vfs_mkfifo(kpath);
+    if (rc == VFS_OK)
+    {
+        frame->rax = 0;
+        return;
+    }
+    if (rc == VFS_ERR_EXIST)
+        frame->rax = (uint64_t)-EEXIST;
+    else if (rc == VFS_ERR_NOENT)
+        frame->rax = (uint64_t)-ENOENT;
+    else if (rc == VFS_ERR_NOMEM)
+        frame->rax = (uint64_t)-ENOMEM;
+    else
+        frame->rax = (uint64_t)-EINVAL;
 }
 
 static void do_sys_exit(exception_frame_t *frame)
@@ -435,7 +466,7 @@ typedef void (*sys_fn_t)(exception_frame_t *frame);
 /* execve 定义在表之后，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_PIPE + 1] = {
+static const sys_fn_t g_sys_table[SYS_MKFIFO + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -451,6 +482,7 @@ static const sys_fn_t g_sys_table[SYS_PIPE + 1] = {
     [SYS_GETPPID] = do_sys_getppid,
     [SYS_BRK] = do_sys_brk,
     [SYS_PIPE] = do_sys_pipe,
+    [SYS_MKFIFO] = do_sys_mkfifo,
 };
 
 /* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
@@ -548,7 +580,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_PIPE || g_sys_table[num] == NULL)
+    if (num > SYS_MKFIFO || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);

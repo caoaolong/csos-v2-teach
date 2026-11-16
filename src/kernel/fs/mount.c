@@ -1,6 +1,7 @@
 #include <kernel/fs/mount.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/fs/ramfs.h>
+#include <kernel/fs/pipefs.h>
 #include <kernel/fs/fat32.h>
 #include <kernel/fs/ext4.h>
 #include <kernel/part/part.h>
@@ -165,10 +166,14 @@ void init_mounts()
         put_string("[MOUNT] register fat32 failed\n");
     if (vfs_register_driver(&ext4_driver) != VFS_OK)
         put_string("[MOUNT] register ext4 failed\n");
+    if (vfs_register_driver(&pipefs_driver) != VFS_OK)
+        put_string("[MOUNT] register pipefs failed\n");
 
     /* 固定挂载：类型写死，不探测 */
     if (vfs_mount("devfs", "/dev", "devfs") != VFS_OK)
         put_string("[MOUNT] mount /dev failed\n");
+    if (vfs_mount("pipefs", "/pipe", "pipefs") != VFS_OK)
+        put_string("[MOUNT] mount /pipe failed\n");
 
     if (g_boot_config.present)
         init_mounts_config();

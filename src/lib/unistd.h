@@ -39,4 +39,8 @@ void *sbrk(long incr);
 /* 匿名管道：fds[0]=读端，fds[1]=写端；成功 0，失败 -1 */
 long pipe(int fds[2]);
 
+/* 命名管道：在 /pipe 下建节点（如 "/pipe/log"）；mode 保留暂不用；
+ * 成功 0，失败 -1 并填 errno（EEXIST=撞名，ENOENT=路径非法） */
+long mkfifo(const char *path, int mode);
+
 #endif /* CSOS_LIBC_UNISTD_H */

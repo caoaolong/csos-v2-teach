@@ -66,6 +66,7 @@ typedef struct fs_driver
     int (*stat)(vfs_mount_t *m, const char *rel, uint64_t *size_out, uint32_t *is_dir_out);
     int (*mkdir)(vfs_mount_t *m, const char *rel);
     int (*rmdir)(vfs_mount_t *m, const char *rel);
+    int (*mkfifo)(vfs_mount_t *m, const char *rel); /* 建命名管道；NULL=不支持 */
     int (*opendir)(vfs_mount_t *m, const char *rel, vfs_dir_t *d);
     int (*readdir)(vfs_dir_t *d, vfs_dirent_t *out);
     int (*closedir)(vfs_dir_t *d);
@@ -118,6 +119,7 @@ int vfs_stat(const char *path, uint64_t *size_out, uint32_t *is_dir_out);
 
 int vfs_mkdir(const char *path);
 int vfs_rmdir(const char *path);
+int vfs_mkfifo(const char *path); /* 建命名管道；驱动无 mkfifo 时回 NOTSUP */
 int vfs_opendir(const char *path, vfs_dir_t **out);
 int vfs_readdir(vfs_dir_t *d, vfs_dirent_t *out);
 int vfs_closedir(vfs_dir_t *d);
