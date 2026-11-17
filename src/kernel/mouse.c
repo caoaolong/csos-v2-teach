@@ -1,17 +1,19 @@
 #include <kernel/mouse.h>
-#include <minput.h>
+#include <input.h>
 #include <kernel/apic.h>
 #include <kernel/apic/ioapic.h>
 #include <kernel/kernel.h>
 #include <kernel/serial.h>
 #include <kernel/spinlock.h>
+#include <kernel/timer.h>
 #include <kernel/vdev.h>
 
 /* PS/2 鼠标：8042 第二端口（AUX），IRQ12，标准 3 字节包。
- * 初始化走 0xD4 写 AUX 命令；数据包由 handler_mouse 组装，解码后进事件环；
- * 用户态经 /dev/mouse0 读 mouse_event_t（读空回 AGAIN，靠 syscall 层 yield 重试）。
+ * 初始化走 0xD4 写 AUX 命令；数据包由 handler_mouse 组装，解码后按
+ * Linux 语义展开为 input_event_t（REL_X/REL_Y + BTN_* 变化 + SYN_REPORT）；
+ * 用户态经 /dev/mouse0 读 input_event_t（读空回 AGAIN，靠 syscall 层 yield 重试）。
  * v1 约束：标准 3 字节协议（无滚轮）；溢出位钳制到 ±255；单读端假设（无 waiter，
- * 多任务同时读会分食事件——display 独占场景够用，focus 路由以后再做）。 */
+ * 多任务同时读会分食事件——compositor 独占场景够用，focus 路由以后再做）。 */
 
 #define AUX_DATA 0x60
 #define AUX_STATUS 0x64
@@ -33,13 +35,14 @@
 #define MOUSE_CMD_DEFAULTS 0xF6
 #define MOUSE_CMD_ENABLE 0xF4
 
-#define MOUSE_EVENT_BUF 128
+#define MOUSE_EVENT_BUF 256
 
-static mouse_event_t g_mouse_buf[MOUSE_EVENT_BUF];
+static input_event_t g_mouse_buf[MOUSE_EVENT_BUF];
 static uint32_t g_mouse_head;
 static uint32_t g_mouse_tail;
 static uint32_t g_mouse_count;
 static spinlock_t g_mouse_lock = SPINLOCK_INIT;
+static uint32_t g_mouse_buttons; /* 上一组包的按键电平（bit0 左 bit1 右 bit2 中） */
 
 /* 包组装状态（中断上下文推进）：idx=已收字节数 */
 static uint8_t g_pkt[3];
@@ -132,6 +135,8 @@ void handler_mouse(exception_frame_t *frame)
         int dx = (g_pkt[0] & 0x10) ? (int)g_pkt[1] - 256 : (int)g_pkt[1];
         int dy = (g_pkt[0] & 0x20) ? (int)g_pkt[2] - 256 : (int)g_pkt[2];
         uint32_t buttons = g_pkt[0] & 0x07;
+        uint32_t changed;
+        uint64_t now;
         uint64_t flags;
 
         /* 溢出钳制到 ±255 保方向 */
@@ -141,16 +146,40 @@ void handler_mouse(exception_frame_t *frame)
             dy = dy >= 0 ? 255 : -255;
         dy = -dy; /* PS/2 上为正，屏坐标下为正 */
 
+        now = uptime_ms();
         flags = spin_lock_irqsave(&g_mouse_lock);
-        if (g_mouse_count < MOUSE_EVENT_BUF)
-        {
-            g_mouse_buf[g_mouse_tail].dx = dx;
-            g_mouse_buf[g_mouse_tail].dy = dy;
-            g_mouse_buf[g_mouse_tail].buttons = buttons;
-            g_mouse_tail = (g_mouse_tail + 1) % MOUSE_EVENT_BUF;
-            g_mouse_count++;
-        }
-        /* 满则丢弃最新包（display 独占读，正常到不了） */
+        changed = buttons ^ g_mouse_buttons;
+        g_mouse_buttons = buttons;
+        /* 中断上下文直接入队：REL（非零才发）+ 变化的 BTN_* + SYN 分组。
+         * 满则丢弃本组剩余事件（compositor 独占读，正常到不了）。 */
+#define MOUSE_PUSH(t, c, v)                                     \
+    do                                                          \
+    {                                                           \
+        if (g_mouse_count < MOUSE_EVENT_BUF)                    \
+        {                                                       \
+            g_mouse_buf[g_mouse_tail].time_ms = now;            \
+            g_mouse_buf[g_mouse_tail].type = (t);               \
+            g_mouse_buf[g_mouse_tail].code = (c);               \
+            g_mouse_buf[g_mouse_tail].value = (v);              \
+            g_mouse_tail = (g_mouse_tail + 1) % MOUSE_EVENT_BUF; \
+            g_mouse_count++;                                    \
+        }                                                       \
+    } while (0)
+        if (dx != 0)
+            MOUSE_PUSH(INPUT_EV_REL, INPUT_REL_X, dx);
+        if (dy != 0)
+            MOUSE_PUSH(INPUT_EV_REL, INPUT_REL_Y, dy);
+        if (changed & 0x01)
+            MOUSE_PUSH(INPUT_EV_KEY, INPUT_BTN_LEFT,
+                       (buttons & 0x01) ? INPUT_KEY_PRESS : INPUT_KEY_RELEASE);
+        if (changed & 0x02)
+            MOUSE_PUSH(INPUT_EV_KEY, INPUT_BTN_RIGHT,
+                       (buttons & 0x02) ? INPUT_KEY_PRESS : INPUT_KEY_RELEASE);
+        if (changed & 0x04)
+            MOUSE_PUSH(INPUT_EV_KEY, INPUT_BTN_MIDDLE,
+                       (buttons & 0x04) ? INPUT_KEY_PRESS : INPUT_KEY_RELEASE);
+        MOUSE_PUSH(INPUT_EV_SYN, INPUT_SYN_REPORT, 0);
+#undef MOUSE_PUSH
         spin_unlock_irqrestore(&g_mouse_lock, flags);
     }
 
@@ -204,7 +233,7 @@ void init_mouse()
 
 static int64_t mouse_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
 {
-    mouse_event_t *p = (mouse_event_t *)buf;
+    input_event_t *p = (input_event_t *)buf;
     uint64_t n = 0;
     uint64_t flags;
 
@@ -212,17 +241,17 @@ static int64_t mouse_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
     (void)f;
     if (len == 0)
         return 0;
-    len -= len % sizeof(mouse_event_t); /* 只给完整事件 */
+    len -= len % sizeof(input_event_t); /* 只给完整事件 */
     if (len == 0)
         return VFS_ERR_INVAL;
 
     flags = spin_lock_irqsave(&g_mouse_lock);
     while (n < len && g_mouse_count > 0)
     {
-        p[n / sizeof(mouse_event_t)] = g_mouse_buf[g_mouse_head];
+        p[n / sizeof(input_event_t)] = g_mouse_buf[g_mouse_head];
         g_mouse_head = (g_mouse_head + 1) % MOUSE_EVENT_BUF;
         g_mouse_count--;
-        n += sizeof(mouse_event_t);
+        n += sizeof(input_event_t);
     }
     spin_unlock_irqrestore(&g_mouse_lock, flags);
 

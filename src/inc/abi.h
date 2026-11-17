@@ -26,11 +26,11 @@
 #define SYS_PIPE 15    /* rdi=int[2] out -> 0(填入读/写fd)/-1 */
 #define SYS_MKFIFO 16  /* rdi=path -> 0/-errno */
 #define SYS_FBMAP 17   /* -> 显存用户态基址/-1（幂等，可重复调用） */
-#define SYS_FBCTL 18   /* rdi=op(0=交还console,1=display接管) -> 0/-EINVAL */
+#define SYS_FBCTL 18   /* rdi=op(0=交还console,1=compositor接管) -> 0/-EINVAL */
 
 /* fbctl 操作码 */
 #define FB_RELEASE 0 /* 屏幕交还 console（按文字模型重画） */
-#define FB_ACQUIRE 1 /* display 接管屏幕（console 只走串口） */
+#define FB_ACQUIRE 1 /* compositor 接管屏幕（console 只走串口） */
 
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */
@@ -44,6 +44,7 @@
 #define O_CREAT 0x40
 #define O_TRUNC 0x200
 #define O_APPEND 0x400
+#define O_NONBLOCK 0x800
 #define O_DIRECTORY 0x1000
 
 /* lseek whence：与 VFS_SEEK_* 同值 */
@@ -58,5 +59,6 @@
 #define ENOMEM 12 /* 内存不足 */
 #define EEXIST 17 /* 已存在（mkfifo 撞名） */
 #define ECHILD 10 /* 无子进程可等 */
+#define EAGAIN 11 /* 非阻塞 IO 暂无数据（O_NONBLOCK 轮询用） */
 
 #endif /* CSOS_ABI_H */

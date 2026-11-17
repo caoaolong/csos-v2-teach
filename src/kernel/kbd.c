@@ -8,6 +8,8 @@
 #include <kernel/string.h>
 #include <kernel/vdev.h>
 #include <kernel/sched.h>
+#include <kernel/timer.h>
+#include <input.h>
 
 #define KBD_DATA 0x60
 #define KBD_STATUS 0x64
@@ -22,57 +24,100 @@
 #define KBD_CMD_READ_CFG 0x20
 #define KBD_CMD_WRITE_CFG 0x60
 
-/* 输入环形缓冲：中断写入，vdev read 读出；静态存储，中断使能前即可使用 */
-#define KBD_BUF_SIZE 256
-static char g_kbd_buf[KBD_BUF_SIZE];
+/* 输入事件环：中断写入 input_event_t，vdev read 读出；
+ * 静态存储，中断使能前即可使用。每次按键产生 KEY+SYN 两个事件。 */
+#define KBD_EVENT_BUF 256
+static input_event_t g_kbd_buf[KBD_EVENT_BUF];
 static uint32_t g_kbd_head;
 static uint32_t g_kbd_tail;
 static uint32_t g_kbd_count;
 static spinlock_t g_kbd_lock = SPINLOCK_INIT;
 static task_t *g_kbd_waiter = NULL;
 
-/* Set1 make → ASCII；0 表示忽略（含 break 由调用方过滤） */
-static const char g_set1_map[128] = {
-    [0x02] = '1',
-    [0x03] = '2',
-    [0x04] = '3',
-    [0x05] = '4',
-    [0x06] = '5',
-    [0x07] = '6',
-    [0x08] = '7',
-    [0x09] = '8',
-    [0x0A] = '9',
-    [0x0B] = '0',
-    [0x0E] = '\b',
-    [0x1C] = '\n',
-    [0x39] = ' ',
-    [0x10] = 'q',
-    [0x11] = 'w',
-    [0x12] = 'e',
-    [0x13] = 'r',
-    [0x14] = 't',
-    [0x15] = 'y',
-    [0x16] = 'u',
-    [0x17] = 'i',
-    [0x18] = 'o',
-    [0x19] = 'p',
-    [0x1E] = 'a',
-    [0x1F] = 's',
-    [0x20] = 'd',
-    [0x21] = 'f',
-    [0x22] = 'g',
-    [0x23] = 'h',
-    [0x24] = 'j',
-    [0x25] = 'k',
-    [0x26] = 'l',
-    [0x2C] = 'z',
-    [0x2D] = 'x',
-    [0x2E] = 'c',
-    [0x2F] = 'v',
-    [0x30] = 'b',
-    [0x31] = 'n',
-    [0x32] = 'm',
+/* E0 扩展前缀状态（中断上下文推进）：1=下一字节为扩展码 */
+static int g_kbd_e0;
+
+/* Set1 make 码 → Linux KEY_*；0 表示忽略 */
+static const uint16_t g_set1_keycode[128] = {
+    [0x01] = INPUT_KEY_ESC,
+    [0x02] = INPUT_KEY_1,
+    [0x03] = INPUT_KEY_2,
+    [0x04] = INPUT_KEY_3,
+    [0x05] = INPUT_KEY_4,
+    [0x06] = INPUT_KEY_5,
+    [0x07] = INPUT_KEY_6,
+    [0x08] = INPUT_KEY_7,
+    [0x09] = INPUT_KEY_8,
+    [0x0A] = INPUT_KEY_9,
+    [0x0B] = INPUT_KEY_0,
+    [0x0E] = INPUT_KEY_BACKSPACE,
+    [0x0F] = INPUT_KEY_TAB,
+    [0x1C] = INPUT_KEY_ENTER,
+    [0x1D] = INPUT_KEY_LEFTCTRL,
+    [0x39] = INPUT_KEY_SPACE,
+    [0x10] = INPUT_KEY_Q,
+    [0x11] = INPUT_KEY_W,
+    [0x12] = INPUT_KEY_E,
+    [0x13] = INPUT_KEY_R,
+    [0x14] = INPUT_KEY_T,
+    [0x15] = INPUT_KEY_Y,
+    [0x16] = INPUT_KEY_U,
+    [0x17] = INPUT_KEY_I,
+    [0x18] = INPUT_KEY_O,
+    [0x19] = INPUT_KEY_P,
+    [0x1E] = INPUT_KEY_A,
+    [0x1F] = INPUT_KEY_S,
+    [0x20] = INPUT_KEY_D,
+    [0x21] = INPUT_KEY_F,
+    [0x22] = INPUT_KEY_G,
+    [0x23] = INPUT_KEY_H,
+    [0x24] = INPUT_KEY_J,
+    [0x25] = INPUT_KEY_K,
+    [0x26] = INPUT_KEY_L,
+    [0x2A] = INPUT_KEY_LEFTSHIFT,
+    [0x2C] = INPUT_KEY_Z,
+    [0x2D] = INPUT_KEY_X,
+    [0x2E] = INPUT_KEY_C,
+    [0x2F] = INPUT_KEY_V,
+    [0x30] = INPUT_KEY_B,
+    [0x31] = INPUT_KEY_N,
+    [0x32] = INPUT_KEY_M,
 };
+
+/* E0 扩展码 → Linux KEY_*（方向键子集） */
+static uint16_t kbd_e0_keycode(uint8_t sc)
+{
+    switch (sc)
+    {
+    case 0x48:
+        return INPUT_KEY_UP;
+    case 0x50:
+        return INPUT_KEY_DOWN;
+    case 0x4B:
+        return INPUT_KEY_LEFT;
+    case 0x4D:
+        return INPUT_KEY_RIGHT;
+    default:
+        return 0;
+    }
+}
+
+/* 中断上下文：入队单个事件，满则丢弃（compositor 独占读，正常到不了） */
+static void kbd_push_event(uint64_t now, uint16_t type, uint16_t code, int32_t value)
+{
+    uint64_t flags = spin_lock_irqsave(&g_kbd_lock);
+
+    if (g_kbd_count < KBD_EVENT_BUF)
+    {
+        g_kbd_buf[g_kbd_tail].time_ms = now;
+        g_kbd_buf[g_kbd_tail].type = type;
+        g_kbd_buf[g_kbd_tail].code = code;
+        g_kbd_buf[g_kbd_tail].value = value;
+        g_kbd_tail = (g_kbd_tail + 1) % KBD_EVENT_BUF;
+        g_kbd_count++;
+    }
+    spin_unlock_irqrestore(&g_kbd_lock, flags);
+}
 
 static void kbd_halt(const char *msg)
 {
@@ -131,7 +176,9 @@ static uint8_t kbd_read_data()
 void handler_kbd(exception_frame_t *frame)
 {
     uint8_t sc;
-    char ch;
+    uint16_t code;
+    int press;
+    uint64_t now;
     task_t *w;
 
     (void)frame;
@@ -144,26 +191,41 @@ void handler_kbd(exception_frame_t *frame)
 
     sc = inb(KBD_DATA);
 
-    /* 忽略 break（高位置位）与 E0 前缀等扩展，第一版只处理 set1 make */
-    if ((sc & 0x80) == 0 && sc < 128)
+    /* E0 前缀：只记状态，不产生事件 */
+    if (sc == 0xE0)
     {
-        ch = g_set1_map[sc];
-        if (ch != 0)
-        {
-            uint64_t flags = spin_lock_irqsave(&g_kbd_lock);
-            if (g_kbd_count < KBD_BUF_SIZE)
-            {
-                g_kbd_buf[g_kbd_tail] = ch;
-                g_kbd_tail = (g_kbd_tail + 1) % KBD_BUF_SIZE;
-                g_kbd_count++;
-            }
-            /* 缓冲满则丢弃新字符；回显由用户态 shell 负责，这里不再输出 */
-            w = g_kbd_waiter;
-            g_kbd_waiter = NULL;
-            if (w != NULL)
-                sched_unblock(w);
-            spin_unlock_irqrestore(&g_kbd_lock, flags);
-        }
+        g_kbd_e0 = 1;
+        lapic_eoi();
+        return;
+    }
+    press = (sc & 0x80) == 0 ? INPUT_KEY_PRESS : INPUT_KEY_RELEASE;
+    sc &= (uint8_t)~0x80u;
+    if (sc >= 128)
+    {
+        g_kbd_e0 = 0;
+        lapic_eoi();
+        return;
+    }
+    if (g_kbd_e0)
+    {
+        g_kbd_e0 = 0;
+        code = kbd_e0_keycode(sc);
+    }
+    else
+    {
+        code = g_set1_keycode[sc];
+    }
+    if (code != 0)
+    {
+        now = uptime_ms();
+        /* Linux 语义：KEY 事件后跟 SYN_REPORT 分组 */
+        kbd_push_event(now, INPUT_EV_KEY, code, press);
+        kbd_push_event(now, INPUT_EV_SYN, INPUT_SYN_REPORT, 0);
+        /* 缓冲满则丢弃新事件；回显由用户态负责，这里不再输出 */
+        w = g_kbd_waiter;
+        g_kbd_waiter = NULL;
+        if (w != NULL)
+            sched_unblock(w);
     }
 
     lapic_eoi();
@@ -197,7 +259,7 @@ void init_kbd()
 
 static int64_t kbd0_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
 {
-    uint8_t *p = (uint8_t *)buf;
+    input_event_t *p = (input_event_t *)buf;
     uint64_t n = 0;
     uint64_t flags;
 
@@ -205,13 +267,17 @@ static int64_t kbd0_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
     (void)f;
     if (len == 0)
         return 0;
+    len -= len % sizeof(input_event_t); /* 只给完整事件 */
+    if (len == 0)
+        return VFS_ERR_INVAL;
 
     flags = spin_lock_irqsave(&g_kbd_lock);
     while (n < len && g_kbd_count > 0)
     {
-        p[n++] = (uint8_t)g_kbd_buf[g_kbd_head];
-        g_kbd_head = (g_kbd_head + 1) % KBD_BUF_SIZE;
+        p[n / sizeof(input_event_t)] = g_kbd_buf[g_kbd_head];
+        g_kbd_head = (g_kbd_head + 1) % KBD_EVENT_BUF;
         g_kbd_count--;
+        n += sizeof(input_event_t);
     }
     spin_unlock_irqrestore(&g_kbd_lock, flags);
 
@@ -220,9 +286,12 @@ static int64_t kbd0_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
 
 int64_t kbd_read_blocking(void *buf, uint64_t len)
 {
-    uint8_t *p = (uint8_t *)buf;
+    input_event_t *p = (input_event_t *)buf;
 
     if (buf == NULL || len == 0)
+        return 0;
+    len -= len % sizeof(input_event_t);
+    if (len == 0)
         return 0;
 
     for (;;)
@@ -232,9 +301,10 @@ int64_t kbd_read_blocking(void *buf, uint64_t len)
 
         while (n < len && g_kbd_count > 0)
         {
-            p[n++] = (uint8_t)g_kbd_buf[g_kbd_head];
-            g_kbd_head = (g_kbd_head + 1) % KBD_BUF_SIZE;
+            p[n / sizeof(input_event_t)] = g_kbd_buf[g_kbd_head];
+            g_kbd_head = (g_kbd_head + 1) % KBD_EVENT_BUF;
             g_kbd_count--;
+            n += sizeof(input_event_t);
         }
         if (n > 0)
         {

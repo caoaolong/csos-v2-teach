@@ -5,5 +5,5 @@ directory /cygdrive/d/project/csos-v2-teach
 
 file /cygdrive/d/project/csos-v2-teach/build/kernel.elf
 add-symbol-file /cygdrive/d/project/csos-v2-teach/build/init.elf
-add-symbol-file /cygdrive/d/project/csos-v2-teach/build/display.elf
+add-symbol-file /cygdrive/d/project/csos-v2-teach/build/compositor.elf
 target remote 127.0.0.1:1234

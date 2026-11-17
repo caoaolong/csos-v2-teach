@@ -42,7 +42,7 @@ long pipe(int fds[2]);
 /* 整块显存映射进本任务：返回像素起点虚地址，失败返回 (void *)-1（幂等） */
 void *fbmap(void);
 
-/* 屏幕归属仲裁：FB_ACQUIRE=display 接管，FB_RELEASE=交还 console；
+/* 屏幕归属仲裁：FB_ACQUIRE=compositor 接管，FB_RELEASE=交还 console；
  * 成功 0，失败 -1 */
 long fbctl(int op);
 

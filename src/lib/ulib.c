@@ -34,16 +34,32 @@ static long syscall3(long num, long a, long b, long c)
     return ret;
 }
 
-/* 写串口+帧缓冲：返回写入字节数，<0 出错 */
+/* 写串口+帧缓冲：返回写入字节数，<0 出错；
+ * 非阻塞 fd 无空间时回 -1 且 errno=EAGAIN */
 long write(int fd, const void *buf, unsigned long len)
 {
-    return syscall3(SYS_WRITE, (long)fd, (long)buf, (long)len);
+    long r = syscall3(SYS_WRITE, (long)fd, (long)buf, (long)len);
+
+    if (r == -EAGAIN)
+    {
+        errno = EAGAIN;
+        return -1;
+    }
+    return r;
 }
 
-/* 读 fd=0（键盘）：返回实际字节数，阻塞直到有数据；<0 出错 */
+/* 读 fd：阻塞 fd 返回实际字节数（阻塞直到有数据）；
+ * O_NONBLOCK fd 无数据时回 -1 且 errno=EAGAIN；<0 出错 */
 long read(int fd, void *buf, unsigned long len)
 {
-    return syscall3(SYS_READ, (long)fd, (long)buf, (long)len);
+    long r = syscall3(SYS_READ, (long)fd, (long)buf, (long)len);
+
+    if (r == -EAGAIN)
+    {
+        errno = EAGAIN;
+        return -1;
+    }
+    return r;
 }
 
 /* 结束当前任务（v1：停住不返回） */

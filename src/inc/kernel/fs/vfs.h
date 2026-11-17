@@ -27,6 +27,7 @@
 #define VFS_O_CREAT 0x40
 #define VFS_O_TRUNC 0x200
 #define VFS_O_APPEND 0x400
+#define VFS_O_NONBLOCK 0x800
 #define VFS_O_DIRECTORY 0x1000
 
 /* ---- seek whence ---- */

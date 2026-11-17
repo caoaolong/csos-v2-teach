@@ -20,6 +20,6 @@ SECTIONS
     /DISCARD/ : { *(.note*) *(.comment*) *(.eh_frame*) }
 
     /* 加载器支持多页段；上限 8 页（32KB）防二进制无节制膨胀
-     * （USER_IMAGE 窗口 32MB，display 基址 0x41000000 处仍有充足余量） */
+     * （USER_IMAGE 窗口 32MB，compositor 基址 0x41000000 处仍有充足余量） */
     ASSERT(. <= 0x40002000 + 8 * 0x1000, "init binary exceeds 8 pages")
 }

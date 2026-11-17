@@ -81,11 +81,17 @@ static void do_sys_write(exception_frame_t *frame)
     }
 
     /* vfs 层已按 O_RDONLY/O_WRONLY 做方向校验 */
+    /* O_NONBLOCK：AGAIN 直接回 -EAGAIN（libc 转 errno），不 yield 重试 */
     for (;;)
     {
         n = vfs_write(f, (const void *)(uintptr_t)ubuf, len);
         if (n != VFS_ERR_AGAIN)
             break;
+        if (f->flags & VFS_O_NONBLOCK)
+        {
+            frame->rax = (uint64_t)-EAGAIN;
+            return;
+        }
         yield();
     }
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
@@ -213,7 +219,7 @@ static void do_sys_fbmap(exception_frame_t *frame)
     frame->rax = USER_FB_BASE + off;
 }
 
-/* fbctl：屏幕归属仲裁。acquire=display 接管（console 停写屏/tick/光标，
+/* fbctl：屏幕归属仲裁。acquire=compositor 接管（console 停写屏/tick/光标，
  * 文字模型冻结，输出只走串口）；release=交还 console（按模型重画恢复）。
  * panic 页走独立路径，无条件夺回，不经过这里。 */
 static void do_sys_fbctl(exception_frame_t *frame)
@@ -368,12 +374,18 @@ static void do_sys_read(exception_frame_t *frame)
         return;
     }
 
-    /* 阻塞语义：AGAIN 时 yield 重试，其余错误直接回 -1 */
+    /* 阻塞语义：AGAIN 时 yield 重试，其余错误直接回 -1；
+     * O_NONBLOCK：AGAIN 直接回 -EAGAIN（libc 转 errno），不阻塞 */
     for (;;)
     {
         n = vfs_read(f, (void *)(uintptr_t)ubuf, len);
         if (n != VFS_ERR_AGAIN)
             break;
+        if (f->flags & VFS_O_NONBLOCK)
+        {
+            frame->rax = (uint64_t)-EAGAIN;
+            return;
+        }
         yield();
     }
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;

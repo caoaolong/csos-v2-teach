@@ -6,7 +6,7 @@
 #define USER_STACK_VADDR 0x40001000ULL
 #define USER_STACK_TOP (USER_STACK_VADDR + 0x1000ULL)
 
-/* 用户地址空间范围：init/display 映像 + 用户栈；exec 时整体拆除重建。
+/* 用户地址空间范围：init/compositor 映像 + 用户栈；exec 时整体拆除重建。
  * 顶部 8MB 预留给显存映射（USER_FB_BASE..USER_IMAGE_END），堆不得进入。 */
 #define USER_IMAGE_BASE 0x40000000ULL
 #define USER_IMAGE_END 0x42000000ULL

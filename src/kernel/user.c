@@ -390,7 +390,7 @@ static uint64_t map_loaded_elf(uint8_t *img, uint64_t file_size,
 }
 
 /* 堆基址 = max(映像末端, 固定栈页顶），按页对齐；新建/exec 后 brk == base（空堆）。
- * init 基址 0x40002000 已在栈页之上，display 基址 0x41000000 亦然，故堆恒跟在
+ * init 基址 0x40002000 已在栈页之上，compositor 基址 0x41000000 亦然，故堆恒跟在
  * 映像末端之后，与映像/固定栈不重叠；fork 由 vmm_clone_user_range 连堆页一并拷贝。 */
 static void heap_reset_for_task(task_t *self, uint64_t image_end)
 {

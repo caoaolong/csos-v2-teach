@@ -26,7 +26,7 @@ static uint32_t s_top;    /* 文本区首像素行 */
 static uint32_t s_cx;     /* 光标列 */
 static uint32_t s_cy;     /* 光标行 */
 static int s_ready;       /* 初始化完成标志（1 才可输出） */
-static int s_detached;    /* 屏幕已交 display：写屏/tick/光标全停，只走串口 */
+static int s_detached;    /* 屏幕已交 compositor：写屏/tick/光标全停，只走串口 */
 static spinlock_t s_lock = SPINLOCK_INIT;
 
 static char *s_text;
@@ -529,7 +529,7 @@ void fb_console_clear_full()
     spin_unlock_irqrestore(&s_lock, flags);
 }
 
-/* 按文字模型重画整个文本区：attach 时调用，把 display 画过的地方恢复 */
+/* 按文字模型重画整个文本区：attach 时调用，把 compositor 画过的地方恢复 */
 static void con_repaint_locked()
 {
     uint32_t r;
@@ -549,7 +549,7 @@ void fb_console_detach()
     flags = spin_lock_irqsave(&s_lock);
     if (s_ready)
     {
-        con_cursor_hide_locked(); /* 擦掉反白光标块，别留在 display 画面上 */
+        con_cursor_hide_locked(); /* 擦掉反白光标块，别留在 compositor 画面上 */
         s_detached = 1;
     }
     spin_unlock_irqrestore(&s_lock, flags);
