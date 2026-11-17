@@ -103,8 +103,9 @@ static int pipefs_open(vfs_mount_t *m, const char *rel, int flags, vfs_file_t *f
     spin_unlock_irqrestore(&sb->lock, irq);
     if (n == NULL)
         return VFS_ERR_NOENT;
-    /* 节点永生：找到即稳定，无需 refs 钉住 */
-    pf = pipe_make_file(n->sh, accmode == VFS_O_WRONLY, m, accmode);
+    /* 节点永生：找到即稳定，无需 refs 钉住。
+     * flags 原样透传（含 O_NONBLOCK，供 syscall 层做轮询；方向判定只看低 2 位）。 */
+    pf = pipe_make_file(n->sh, accmode == VFS_O_WRONLY, m, flags);
     if (pf == NULL)
         return VFS_ERR_NOMEM;
 

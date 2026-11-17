@@ -1,76 +1,79 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 #include <fbinfo.h>
 #include <input.h>
+#include <comp_ipc.h>
+#include "font.h"
 #include <gfx/cursor.h>
 
 #define COMP_BG_RGB 0x000F0F12u
-#define COMP_DOT_RGB 0x00FFFFFFu
-#define COMP_CLICK_RGB 0x00FF4040u
-#define KBD_STEP 8
+#define COMP_FG_RGB 0x00E8E8E8u
 
-static void cursor_paint(uint32_t *px, uint32_t stride, uint32_t cx, uint32_t cy,
-                         uint32_t width, uint32_t height, int erase)
+/* v1 单客户端：窗口即全屏。输入只归 compositor，命中窗口后换算坐标下发；
+ * 客户端像素归客户端，compositor 只画光标（已知局限：cursor erase 按
+ * 底色重填，会吃掉光标下的客户端像素；根治需保存光标下像素，后续再做）。 */
+
+static uint32_t *g_px;
+static uint32_t g_stride;
+static uint32_t g_width;
+static uint32_t g_height;
+static comp_rect_t g_win;
+
+static uint32_t g_cx;
+static uint32_t g_cy;
+static uint32_t g_max_x;
+static uint32_t g_max_y;
+
+static int g_cmdfd = -1; /* C→S：读 */
+static int g_evtfd = -1; /* S→C：写 */
+static comp_reader_t g_cmdr;
+
+/* 用户栈仅一页：大缓冲一律放 bss，main 栈帧只留标量 */
+static input_event_t g_mevs[32];
+static input_event_t g_kevs[32];
+static uint8_t g_payload[COMP_MAX_PAYLOAD];
+static comp_hdr_t g_cmdh;
+
+static void cursor_paint(uint32_t cx, uint32_t cy, int erase)
 {
     uint32_t i;
     uint32_t j;
 
     for (j = 0; j < CURSOR_HEIGHT; j++)
     {
-        if (cy + j >= height)
+        if (cy + j >= g_height)
             break;
         for (i = 0; i < CURSOR_WIDTH; i++)
         {
             uint32_t at;
             uint32_t c;
 
-            if (cx + i >= width)
+            if (cx + i >= g_width)
                 break;
-            at = (unsigned long)(cy + j) * stride + cx + i;
+            at = (unsigned long)(cy + j) * g_stride + cx + i;
             if (erase)
             {
-                px[at] = COMP_BG_RGB;
+                g_px[at] = COMP_BG_RGB;
                 continue;
             }
             c = CURSOR[j * CURSOR_WIDTH + i];
             if (c != 0)
-                px[at] = c;
+                g_px[at] = c;
         }
     }
 }
 
-/* 在屏内画实心方块（键盘回显/点击落点用，持久保留，不随光标擦除） */
-static void draw_block(uint32_t *px, uint32_t stride, uint32_t x, uint32_t y,
-                       uint32_t w, uint32_t h, uint32_t color,
-                       uint32_t width, uint32_t height)
-{
-    uint32_t i;
-    uint32_t j;
-
-    for (j = 0; j < h; j++)
-    {
-        if (y + j >= height)
-            break;
-        for (i = 0; i < w; i++)
-        {
-            if (x + i >= width)
-                break;
-            px[(unsigned long)(y + j) * stride + x + i] = color;
-        }
-    }
-}
-
-static void clear_screen(uint32_t *px, uint32_t stride,
-                         uint32_t width, uint32_t height)
+static void clear_screen(void)
 {
     uint32_t x;
     uint32_t y;
 
-    for (y = 0; y < height; y++)
+    for (y = 0; y < g_height; y++)
     {
-        for (x = 0; x < width; x++)
-            px[(unsigned long)y * stride + x] = COMP_BG_RGB;
+        for (x = 0; x < g_width; x++)
+            g_px[(unsigned long)y * g_stride + x] = COMP_BG_RGB;
     }
 }
 
@@ -83,72 +86,161 @@ static uint32_t clamp_u32(int v, uint32_t max)
     return (uint32_t)v;
 }
 
-/* 键盘按下后的可见反馈：wasd/方向键移光标，c 清屏，其余回显方块 */
-static void handle_key_press(char ch, uint16_t code, uint32_t *pcx, uint32_t *pcy,
-                             uint32_t max_x, uint32_t max_y, uint32_t *px,
-                             uint32_t stride, uint32_t width, uint32_t height,
-                             uint32_t *pecho_x, uint32_t echo_y)
+/* 窗口内裁剪画实心矩形（坐标已为屏坐标） */
+static void comp_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
 {
-    uint32_t cx = *pcx;
-    uint32_t cy = *pcy;
-    uint32_t echo_x = *pecho_x;
-    int nx = (int)cx;
-    int ny = (int)cy;
+    uint32_t i;
+    uint32_t j;
+    uint32_t x0 = x < g_win.x ? g_win.x : x;
+    uint32_t y0 = y < g_win.y ? g_win.y : y;
+    uint32_t x1 = x + w > g_win.x + g_win.w ? g_win.x + g_win.w : x + w;
+    uint32_t y1 = y + h > g_win.y + g_win.h ? g_win.y + g_win.h : y + h;
 
-    /* 串口回显（接管后 console 只走串口，屏上另用方块回显） */
-    printf("compositor: key '%c' (code=%u)\n",
-           ch != 0 && ch >= 32 && ch < 127 ? ch : '.', (unsigned)code);
-    if (ch == 'w' || code == INPUT_KEY_UP)
-        ny -= KBD_STEP;
-    else if (ch == 's' || code == INPUT_KEY_DOWN)
-        ny += KBD_STEP;
-    else if (ch == 'a' || code == INPUT_KEY_LEFT)
-        nx -= KBD_STEP;
-    else if (ch == 'd' || code == INPUT_KEY_RIGHT)
-        nx += KBD_STEP;
-    else if (ch == 'c')
+    if (x1 <= x0 || y1 <= y0)
+        return;
+    if (x0 >= g_width || y0 >= g_height)
+        return;
+    if (x1 > g_width)
+        x1 = g_width;
+    if (y1 > g_height)
+        y1 = g_height;
+    for (j = y0; j < y1; j++)
     {
-        clear_screen(px, stride, width, height);
-        echo_x = 8;
+        for (i = x0; i < x1; i++)
+            g_px[(unsigned long)j * g_stride + i] = color;
     }
-    if (nx != (int)cx || ny != (int)cy)
-    {
-        cursor_paint(px, stride, cx, cy, width, height, 1);
-        cx = clamp_u32(nx, max_x);
-        cy = clamp_u32(ny, max_y);
-        cursor_paint(px, stride, cx, cy, width, height, 0);
-    }
-    /* 屏上回显：底行画一个 8x8 方块，按键则进一格 */
-    if (ch == '\n')
-    {
-        echo_x = 8;
-    }
-    else if (ch == '\b')
-    {
-        if (echo_x >= 8 + 10)
-            echo_x -= 10;
-        draw_block(px, stride, echo_x, echo_y, 8, 8, COMP_BG_RGB,
-                   width, height);
-    }
-    else if (ch != 0)
-    {
-        uint32_t color = (ch == ' ') ? COMP_CLICK_RGB : COMP_DOT_RGB;
+}
 
-        if (echo_x + 8 < width)
+/* 在窗口内画一个字形（屏坐标左上角，越界像素丢弃） */
+static void comp_glyph(uint32_t x, uint32_t y, char ch, uint32_t fg, uint32_t bg)
+{
+    const uint8_t *g = comp_font_glyph(ch);
+    uint32_t r;
+    uint32_t c;
+
+    for (r = 0; r < COMP_FONT_H; r++)
+    {
+        uint8_t bits;
+        uint32_t py;
+
+        if (y + r < g_win.y || y + r >= g_win.y + g_win.h || y + r >= g_height)
+            continue;
+        py = y + r;
+        bits = g[r];
+        for (c = 0; c < COMP_FONT_W; c++)
         {
-            draw_block(px, stride, echo_x, echo_y, 8, 8, color,
-                       width, height);
-            cursor_paint(px, stride, cx, cy, width, height, 0);
-            echo_x += 10;
-        }
-        else
-        {
-            echo_x = 8;
+            uint32_t px = x + c;
+
+            if (px < g_win.x || px >= g_win.x + g_win.w || px >= g_width)
+                continue;
+            g_px[(unsigned long)py * g_stride + px] =
+                (bits & (0x80u >> c)) ? fg : bg;
         }
     }
-    *pcx = cx;
-    *pcy = cy;
-    *pecho_x = echo_x;
+}
+
+/* 执行客户端命令，payload 均为窗口相对坐标 */
+static void exec_fill(const uint8_t *p)
+{
+    uint32_t x = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+                 ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+    uint32_t y = (uint32_t)p[4] | ((uint32_t)p[5] << 8) |
+                 ((uint32_t)p[6] << 16) | ((uint32_t)p[7] << 24);
+    uint32_t w = (uint32_t)p[8] | ((uint32_t)p[9] << 8) |
+                 ((uint32_t)p[10] << 16) | ((uint32_t)p[11] << 24);
+    uint32_t h = (uint32_t)p[12] | ((uint32_t)p[13] << 8) |
+                 ((uint32_t)p[14] << 16) | ((uint32_t)p[15] << 24);
+    uint32_t color = (uint32_t)p[16] | ((uint32_t)p[17] << 8) |
+                     ((uint32_t)p[18] << 16) | ((uint32_t)p[19] << 24);
+
+    comp_fill(g_win.x + x, g_win.y + y, w, h, color);
+}
+
+static void exec_text(const uint8_t *p, unsigned long len)
+{
+    uint32_t x;
+    uint32_t y;
+    uint32_t color;
+    unsigned long n;
+    unsigned long i;
+
+    if (len < 14)
+        return;
+    x = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+        ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+    y = (uint32_t)p[4] | ((uint32_t)p[5] << 8) |
+        ((uint32_t)p[6] << 16) | ((uint32_t)p[7] << 24);
+    color = (uint32_t)p[8] | ((uint32_t)p[9] << 8) |
+            ((uint32_t)p[10] << 16) | ((uint32_t)p[11] << 24);
+    n = (unsigned long)p[12] | ((unsigned long)p[13] << 8);
+    if (14 + n > len)
+        return;
+    for (i = 0; i < n; i++)
+        comp_glyph(g_win.x + x + (uint32_t)(i * COMP_FONT_W), g_win.y + y,
+                   (char)p[14 + i], color, COMP_BG_RGB);
+    cursor_paint(g_cx, g_cy, 0); /* 文本盖住光标时重画 */
+}
+
+/* 转发一批输入事件给客户端（阻塞写完；失败返回 -1） */
+static int forward_events(const input_event_t *evs, long nev)
+{
+    return (int)comp_send(g_evtfd, COMP_MSG_EVTS, evs,
+                          (unsigned long)(nev * (long)sizeof(input_event_t)));
+}
+
+/* 与客户端握手：建 fifo → 开两端（阻塞等对端）→ 下发窗口 */
+static int ipc_handshake(void)
+{
+    comp_rect_t w;
+
+    if (g_cmdfd >= 0)
+        close(g_cmdfd);
+    if (g_evtfd >= 0)
+        close(g_evtfd);
+    g_cmdfd = -1;
+    g_evtfd = -1;
+    comp_reader_init(&g_cmdr);
+    if (mkfifo(COMP_CMD_FIFO, 0) != 0 && errno != EEXIST)
+    {
+        printf("compositor: mkfifo cmd failed\n");
+        return -1;
+    }
+    if (mkfifo(COMP_EVT_FIFO, 0) != 0 && errno != EEXIST)
+    {
+        printf("compositor: mkfifo evt failed\n");
+        return -1;
+    }
+    /* 先开 cmd 读端，再开 evt 写端；客户端以同样顺序开写/读端，对称等待 */
+    g_cmdfd = (int)open(COMP_CMD_FIFO, O_RDONLY | O_NONBLOCK);
+    if (g_cmdfd < 0)
+    {
+        printf("compositor: open cmd failed\n");
+        return -1;
+    }
+    g_evtfd = (int)open(COMP_EVT_FIFO, O_WRONLY);
+    if (g_evtfd < 0)
+    {
+        printf("compositor: open evt failed\n");
+        close(g_cmdfd);
+        g_cmdfd = -1;
+        return -1;
+    }
+    g_win.x = 0;
+    g_win.y = 0;
+    g_win.w = g_width;
+    g_win.h = g_height;
+    w = g_win;
+    if (comp_send(g_evtfd, COMP_MSG_WIN, &w, sizeof(w)) != 0)
+    {
+        printf("compositor: send WIN failed\n");
+        close(g_cmdfd);
+        close(g_evtfd);
+        g_cmdfd = -1;
+        g_evtfd = -1;
+        return -1;
+    }
+    printf("compositor: client connected\n");
+    return 0;
 }
 
 int main()
@@ -156,18 +248,10 @@ int main()
     fb_info_t info;
     long fd;
     long n;
-    uint32_t *px;
     uint32_t x;
     uint32_t y;
-    uint32_t stride;
     int mfd;
     int kfd;
-    uint32_t cx;
-    uint32_t cy;
-    uint32_t max_x;
-    uint32_t max_y;
-    uint32_t echo_x; /* 键盘回显块横坐标（底行） */
-    uint32_t echo_y;
 
     fd = open("/dev/fb0", O_RDONLY);
     if (fd < 0)
@@ -187,22 +271,21 @@ int main()
         printf("compositor: fb acquire failed\n");
         exit(1);
     }
-    px = (uint32_t *)fbmap();
-    if (px == (void *)0 || px == (void *)-1)
+    g_px = (uint32_t *)fbmap();
+    if (g_px == (void *)0 || g_px == (void *)-1)
     {
         printf("compositor: fbmap failed\n");
         exit(1);
     }
-    stride = info.pitch / 4;
-    for (y = 0; y < info.height; y++)
+    g_stride = info.pitch / 4;
+    g_width = info.width;
+    g_height = info.height;
+    for (y = 0; y < g_height; y++)
     {
-        for (x = 0; x < info.width; x++)
-            px[(unsigned long)y * stride + x] = COMP_BG_RGB;
+        for (x = 0; x < g_width; x++)
+            g_px[(unsigned long)y * g_stride + x] = COMP_BG_RGB;
     }
 
-    /* 鼠标 + 键盘双事件接收：两路都输出 input_event_t，以 O_NONBLOCK 轮询。
-     * read 无数据时回 -1/EAGAIN（不阻塞），有事件则批量耗尽，避免 starvation。
-     * 鼠标按 SYN 分组提交一次光标移动；键盘只响应 value==PRESS 的按下事件。 */
     mfd = (int)open("/dev/mouse0", O_RDONLY | O_NONBLOCK);
     if (mfd < 0)
     {
@@ -215,20 +298,20 @@ int main()
         printf("compositor: open /dev/kbd0 failed\n");
         exit(1);
     }
-    cx = info.width / 2;
-    cy = info.height / 2;
-    max_x = info.width > CURSOR_WIDTH ? info.width - CURSOR_WIDTH : 0;
-    max_y = info.height > CURSOR_HEIGHT ? info.height - CURSOR_HEIGHT : 0;
-    echo_x = 8;
-    echo_y = info.height > 24 ? info.height - 16 : 0;
+    g_cx = g_width / 2;
+    g_cy = g_height / 2;
+    g_max_x = g_width > CURSOR_WIDTH ? g_width - CURSOR_WIDTH : 0;
+    g_max_y = g_height > CURSOR_HEIGHT ? g_height - CURSOR_HEIGHT : 0;
 
-    printf("compositor: input ready %ux%u\n", info.width, info.height);
-    cursor_paint(px, stride, cx, cy, info.width, info.height, 0);
+    printf("compositor: input ready %ux%u, waiting client\n",
+           g_width, g_height);
+    if (ipc_handshake() != 0)
+        exit(1);
+    clear_screen();
+    cursor_paint(g_cx, g_cy, 0);
     for (;;)
     {
         int idle = 1;
-        input_event_t mevs[32];
-        input_event_t kevs[32];
         long r;
         long kr;
         long i;
@@ -236,10 +319,15 @@ int main()
         int mdy = 0;
         uint32_t mbuttons = 0;
         int mhave = 0;
+        int fr;
+        input_event_t *mevs = g_mevs;
+        input_event_t *kevs = g_kevs;
+        uint8_t *payload = g_payload;
+        comp_hdr_t *h = &g_cmdh;
 
-        /* --- 鼠标：耗尽 input_event_t，按 SYN 分组移动光标 --- */
+        /* --- 鼠标：SYN 分组移动光标，整批转发客户端 --- */
         errno = 0;
-        r = read(mfd, mevs, sizeof(mevs));
+        r = read(mfd, mevs, sizeof(g_mevs));
         if (r > 0)
         {
             long nev = r / (long)sizeof(input_event_t);
@@ -263,70 +351,42 @@ int main()
                 else if (mevs[i].type == INPUT_EV_KEY)
                 {
                     if (mevs[i].code == INPUT_BTN_LEFT)
-                    {
-                        if (mevs[i].value == INPUT_KEY_PRESS)
-                            mbuttons |= 0x01;
-                        else
-                            mbuttons &= (uint32_t)~0x01u;
-                        mhave = 1;
-                    }
+                        mbuttons = mevs[i].value ? mbuttons | 0x01u
+                                                 : mbuttons & ~0x01u;
                     else if (mevs[i].code == INPUT_BTN_RIGHT)
-                    {
-                        if (mevs[i].value == INPUT_KEY_PRESS)
-                            mbuttons |= 0x02;
-                        else
-                            mbuttons &= (uint32_t)~0x02u;
-                        mhave = 1;
-                    }
+                        mbuttons = mevs[i].value ? mbuttons | 0x02u
+                                                 : mbuttons & ~0x02u;
                     else if (mevs[i].code == INPUT_BTN_MIDDLE)
-                    {
-                        if (mevs[i].value == INPUT_KEY_PRESS)
-                            mbuttons |= 0x04;
-                        else
-                            mbuttons &= (uint32_t)~0x04u;
-                        mhave = 1;
-                    }
+                        mbuttons = mevs[i].value ? mbuttons | 0x04u
+                                                 : mbuttons & ~0x04u;
+                    mhave = 1;
                 }
-                else if (mevs[i].type == INPUT_EV_SYN)
+                else if (mevs[i].type == INPUT_EV_SYN && mhave)
                 {
-                    if (mhave)
-                    {
-                        int nx = (int)cx + mdx;
-                        int ny = (int)cy + mdy;
+                    int nx = (int)g_cx + mdx;
+                    int ny = (int)g_cy + mdy;
 
-                        cursor_paint(px, stride, cx, cy,
-                                     info.width, info.height, 1);
-                        cx = clamp_u32(nx, max_x);
-                        cy = clamp_u32(ny, max_y);
-                        cursor_paint(px, stride, cx, cy,
-                                     info.width, info.height, 0);
-                        if (mbuttons & 0x01)
-                        {
-                            /* 左键按住：热点落笔（持久白点） */
-                            draw_block(px, stride, cx, cy, 4, 4,
-                                       COMP_DOT_RGB,
-                                       info.width, info.height);
-                            cursor_paint(px, stride, cx, cy,
-                                         info.width, info.height, 0);
-                        }
-                        if (mbuttons & 0x02)
-                        {
-                            /* 右键按住：清屏并重画光标 */
-                            clear_screen(px, stride,
-                                         info.width, info.height);
-                            cursor_paint(px, stride, cx, cy,
-                                         info.width, info.height, 0);
-                            echo_x = 8;
-                        }
-                        mdx = 0;
-                        mdy = 0;
-                        mhave = 0;
-                    }
+                    cursor_paint(g_cx, g_cy, 1);
+                    g_cx = clamp_u32(nx, g_max_x);
+                    g_cy = clamp_u32(ny, g_max_y);
+                    cursor_paint(g_cx, g_cy, 0);
+                    mdx = 0;
+                    mdy = 0;
+                    mhave = 0;
                 }
+            }
+            if (g_evtfd >= 0 && forward_events(mevs, nev) != 0)
+            {
+                printf("compositor: client lost, re-handshake\n");
+                if (ipc_handshake() != 0)
+                    exit(1);
+                clear_screen();
+                cursor_paint(g_cx, g_cy, 0);
+                continue;
             }
         }
 
-        /* --- 键盘：耗尽 input_event_t，只响应按下事件 --- */
+        /* --- 键盘：只响应按下做日志，其余原样转发（回显归客户端） --- */
         errno = 0;
         kr = read(kfd, kevs, sizeof(kevs));
         if (kr > 0)
@@ -336,21 +396,56 @@ int main()
             idle = 0;
             for (i = 0; i < nev; i++)
             {
-                char ch;
+                if (kevs[i].type == INPUT_EV_KEY &&
+                    kevs[i].value == INPUT_KEY_PRESS)
+                {
+                    char ch = input_key_to_ascii(kevs[i].code);
 
-                if (kevs[i].type != INPUT_EV_KEY ||
-                    kevs[i].value != INPUT_KEY_PRESS)
-                    continue;
-                ch = input_key_to_ascii(kevs[i].code);
-                handle_key_press(ch, kevs[i].code, &cx, &cy,
-                                 max_x, max_y, px, stride,
-                                 info.width, info.height,
-                                 &echo_x, echo_y);
+                    printf("compositor: key '%c' (code=%u)\n",
+                           ch != 0 && ch >= 32 && ch < 127 ? ch : '.',
+                           (unsigned)kevs[i].code);
+                }
+            }
+            if (g_evtfd >= 0 && forward_events(kevs, nev) != 0)
+            {
+                printf("compositor: client lost, re-handshake\n");
+                if (ipc_handshake() != 0)
+                    exit(1);
+                clear_screen();
+                cursor_paint(g_cx, g_cy, 0);
+                continue;
+            }
+        }
+
+        /* --- 客户端命令：耗尽并执行 --- */
+        if (g_cmdfd >= 0)
+        {
+            for (;;)
+            {
+                errno = 0;
+                fr = comp_reader_feed(&g_cmdr, g_cmdfd, h, payload,
+                                      sizeof(g_payload));
+                if (fr == 0)
+                    break;
+                if (fr < 0)
+                {
+                    printf("compositor: client lost, re-handshake\n");
+                    if (ipc_handshake() != 0)
+                        exit(1);
+                    clear_screen();
+                    cursor_paint(g_cx, g_cy, 0);
+                    break;
+                }
+                idle = 0;
+                if (h->type == COMP_MSG_FILL)
+                    exec_fill(payload);
+                else if (h->type == COMP_MSG_TEXT)
+                    exec_text(payload, h->len);
             }
         }
 
         if (idle)
-            sleep(5); /* 两路都无事件：让出 CPU，避免空转 */
+            sleep(5);
     }
     return 0;
 }
