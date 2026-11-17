@@ -15,20 +15,14 @@
 extern "C" {
 #endif
 
-/**
-  Parse an EDID blob and report the panel physical size.
-
-  Bytes 0x15/0x16 are horizontal/vertical size in centimeters (0 =
-  unknown, e.g. projectors); converted to millimeters here.
-
-  @param[in]  Edid  EDID bytes (base block).
-  @param[in]  Size  Byte count, must be >= 128.
-  @param[out] Wmm   Physical width in mm.
-  @param[out] Hmm   Physical height in mm.
-
-  @retval 0   Parsed (both nonzero).
-  @retval -1  No usable size (bad blob or unknown dimensions).
-**/
+/* Parse EDID blob, report panel size in mm. */
+/* Zero means unknown size. */
+/* @param Edid EDID bytes, base block. */
+/* @param Size Byte count, at least 128. */
+/* @param Wmm Physical width in mm. */
+/* @param Hmm Physical height in mm. */
+/* @retval 0 Parsed, both nonzero. */
+/* @retval -1 No usable size. */
 int
 EdidParsePhysicalSize (
   const uint8_t  *Edid,

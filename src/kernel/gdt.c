@@ -50,7 +50,7 @@ static void load_gdt()
         : "rax", "memory");
 }
 
-/* 64-bit TSS 描述符占两个 GDT 槽（16 字节） */
+/* TSS 描述符占两个 GDT 槽，共 16 字节 */
 static void set_tss_entry(int selector, uint64_t base, uint32_t limit)
 {
     gdt_entry_t *low = &gdt[selector >> 3];
@@ -89,28 +89,27 @@ void init_gdt()
         set_gdt_entry(i << 3, 0, 0, 0);
     }
 
-    /* 0x08: 64-bit 代码段 L=1 D=0 */
+    /* 0x08：64 位代码段 */
     set_gdt_entry(KERNEL_CODE_SEG, 0, 0xFFFFFFFF,
                   SEG_ATTR_P | SEG_ATTR_DPL0 | SEG_NORMAL | SEG_TYPE_CODE | SEG_TYPE_RW |
                       SEG_ATTR_L | SEG_ATTR_G);
 
-    /* 0x10: 数据段（Long Mode 下 base/limit 被忽略） */
+    /* 0x10：数据段 */
     set_gdt_entry(KERNEL_DATA_SEG, 0, 0xFFFFFFFF,
                   SEG_ATTR_P | SEG_ATTR_DPL0 | SEG_NORMAL | SEG_TYPE_DATA | SEG_TYPE_RW |
                       SEG_ATTR_G);
 
-    /* 0x18: 32 位兼容用户代码段（选择子 USER32_CS_SEG=0x1B，仅作 STAR 基址；
-     * sysret64 取 CS=该值+16、SS=该值+8） */
+    /* 0x18：32 位兼容用户代码段 */
     set_gdt_entry(USER32_CS_SEG, 0, 0xFFFFFFFF,
                   SEG_ATTR_P | SEG_ATTR_DPL3 | SEG_NORMAL | SEG_TYPE_CODE | SEG_TYPE_RW |
                       SEG_ATTR_D | SEG_ATTR_G);
 
-    /* 0x20: 用户数据段（选择子 USER_DATA_SEG=0x23） */
+    /* 0x20：用户数据段 */
     set_gdt_entry(USER_DATA_SEG, 0, 0xFFFFFFFF,
                   SEG_ATTR_P | SEG_ATTR_DPL3 | SEG_NORMAL | SEG_TYPE_DATA | SEG_TYPE_RW |
                       SEG_ATTR_G);
 
-    /* 0x28: 64 位用户代码段（选择子 USER_CODE_SEG=0x2B，L=1） */
+    /* 0x28：64 位用户代码段 */
     set_gdt_entry(USER_CODE_SEG, 0, 0xFFFFFFFF,
                   SEG_ATTR_P | SEG_ATTR_DPL3 | SEG_NORMAL | SEG_TYPE_CODE | SEG_TYPE_RW |
                       SEG_ATTR_L | SEG_ATTR_G);

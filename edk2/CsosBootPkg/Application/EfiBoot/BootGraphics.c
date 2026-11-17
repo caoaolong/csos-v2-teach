@@ -48,10 +48,8 @@ BootGraphicsEdidPhysicalSize (
   return EFI_SUCCESS;
 }
 
-/**
-  Locate the EDID blob (Active preferred, Discovered as fallback).
-  Shared by the physical-size query.
-**/
+/* Locate EDID blob, Active preferred then Discovered. */
+/* Shared by the physical-size query. */
 STATIC
 BOOLEAN
 GetEdidBlob (
@@ -120,11 +118,8 @@ BootGraphicsSelectMode (
     return EFI_UNSUPPORTED;
   }
 
-  /*
-   * No auto-selection here: the user picks a mode in Setup Utility and
-   * the choice persists in NVRAM (GopModeSet). Without a stored choice,
-   * keep whatever mode the firmware booted with.
-   */
+  /* No auto-selection here. */
+  /* Without a stored choice keep the firmware mode. */
   Mode = Gop->Mode->Mode;
   if ((Setup != NULL) && (Setup->GopModeSet != 0) &&
       (Setup->GopMode < Gop->Mode->MaxMode)) {

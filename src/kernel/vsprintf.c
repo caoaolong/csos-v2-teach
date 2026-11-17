@@ -1,7 +1,7 @@
 #include <kernel/kernel.h>
 #include <kernel/string.h>
 
-/* we use this so that we can do without the ctype library */
+/* 不依赖 ctype 库 */
 #define is_digit(c) ((c) >= '0' && (c) <= '9')
 
 static int skip_atoi(const char **s)
@@ -13,15 +13,15 @@ static int skip_atoi(const char **s)
     return i;
 }
 
-#define ZEROPAD 1  /* pad with zero */
-#define SIGN 2     /* unsigned/signed long */
-#define PLUS 4     /* show plus */
-#define SPACE 8    /* space if plus */
-#define LEFT 16    /* left justified */
-#define SPECIAL 32 /* 0x */
-#define SMALL 64   /* use 'abcdef' instead of 'ABCDEF' */
+#define ZEROPAD 1  /* 补零 */
+#define SIGN 2     /* 有符号长整型 */
+#define PLUS 4     /* 显示加号 */
+#define SPACE 8    /* 加号位补空格 */
+#define LEFT 16    /* 左对齐 */
+#define SPECIAL 32 /* 加 0x 前缀 */
+#define SMALL 64   /* 小写十六进制 */
 
-/* 64 位无符号格式化（原 do_div/divl 仅支持 32 位） */
+/* 64 位无符号格式化 */
 static char *number(char *str, unsigned long long num, int base, int size, int precision, int type)
 {
     char c, sign, tmp[66];
@@ -86,7 +86,7 @@ static char *number(char *str, unsigned long long num, int base, int size, int p
     return str;
 }
 
-/* gcc x86_64 上 va_list 为数组类型，按值传递会退化成指针，va_arg 可写回调用方 */
+/* 按限定符取无符号参数 */
 static unsigned long long get_uint_arg(va_list args, int qualifier)
 {
     if (qualifier == 'L') /* ll */
@@ -113,12 +113,11 @@ int vsprintf(char *buf, const char *fmt, va_list args)
     char *s;
     int *ip;
 
-    int flags; /* flags to number() */
+    int flags; /* 传给 number 的标志 */
 
-    int field_width; /* width of output field */
-    int precision;   /* min. # of digits for integers; max
-              number of chars for from string */
-    int qualifier;   /* 'h', 'l', 'L'(ll) for integer fields */
+    int field_width; /* 输出字段宽度 */
+    int precision;   /* 整数最小位数，字符串最大字符数 */
+    int qualifier;   /* 整数长度修饰符 */
 
     for (str = buf; *fmt; ++fmt)
     {
@@ -128,10 +127,10 @@ int vsprintf(char *buf, const char *fmt, va_list args)
             continue;
         }
 
-        /* process flags */
+        /* 解析标志 */
         flags = 0;
     repeat:
-        ++fmt; /* this also skips first '%' */
+        ++fmt; /* 跳过首个 % */
         switch (*fmt)
         {
         case '-':
@@ -151,13 +150,13 @@ int vsprintf(char *buf, const char *fmt, va_list args)
             goto repeat;
         }
 
-        /* get field width */
+        /* 取字段宽度 */
         field_width = -1;
         if (is_digit(*fmt))
             field_width = skip_atoi(&fmt);
         else if (*fmt == '*')
         {
-            /* it's the next argument */
+            /* 宽度取自下一参数 */
             field_width = va_arg(args, int);
             if (field_width < 0)
             {
@@ -166,7 +165,7 @@ int vsprintf(char *buf, const char *fmt, va_list args)
             }
         }
 
-        /* get the precision */
+        /* 取精度 */
         precision = -1;
         if (*fmt == '.')
         {
@@ -175,14 +174,14 @@ int vsprintf(char *buf, const char *fmt, va_list args)
                 precision = skip_atoi(&fmt);
             else if (*fmt == '*')
             {
-                /* it's the next argument */
+                /* 精度取自下一参数 */
                 precision = va_arg(args, int);
             }
             if (precision < 0)
                 precision = 0;
         }
 
-        /* get the conversion qualifier：支持 l / ll */
+        /* 取转换限定符，支持 l/ll */
         qualifier = -1;
         if (*fmt == 'h' || *fmt == 'l' || *fmt == 'L')
         {

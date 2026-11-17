@@ -7,11 +7,7 @@
 
 #define PIPE_BUF_SIZE 4096
 
-/* 匿名管道 + fifo 共享的环形缓冲。
- * 生存期：持有者引用计数（各端点 + fifo 节点），归零释放。
- * 数据随缓冲走：最后的端点关闭后，未读数据保留给后来者（POSIX 语义），
- * fifo 节点复用同一缓冲，不做清空——新一轮 open 看到的是"上次没读完的"，
- * 而不是"上次的残留"，两者是同一回事。 */
+/* 环形缓冲，引用计数管理生存期 */
 typedef struct pipe_shared
 {
     spinlock_t lock;
@@ -19,19 +15,18 @@ typedef struct pipe_shared
     uint32_t head; /* 读位置 */
     uint32_t tail; /* 写位置 */
     uint32_t count; /* 有效字节数 */
-    int readers;   /* 已打开的读端数 */
-    int writers;   /* 已打开的写端数 */
-    int refs;      /* 持有者数（__sync 原子增减，归零即释放） */
+    int readers;   /* 读端数 */
+    int writers;   /* 写端数 */
+    int refs;      /* 持有者数，归零释放 */
 } pipe_shared_t;
 
 typedef struct pipe_end
 {
     pipe_shared_t *sh;
-    int is_write; /* 0=读端，1=写端 */
+    int is_write; /* 读写端标志 */
 } pipe_end_t;
 
-/* 匿名 pipe 的假挂载点：vfs_close 必调 vfs_unpin(f->mnt)，给个永不卸载的静态位。
- * 真实挂载点（pipefs）走自己的 mnt，open_count 正常参与 unmount 保护。 */
+/* 匿名管道用静态假挂载点 */
 static vfs_mount_t g_pipe_mount;
 
 pipe_shared_t *pipe_shared_new(void)
@@ -65,7 +60,7 @@ void pipe_shared_release(pipe_shared_t *sh)
         kfree(sh);
 }
 
-/* 建端点：计数器+1 并持有缓冲引用。失败返回 NULL（无副作用）。 */
+/* 建端点并持有缓冲引用 */
 static pipe_end_t *pipe_end_new(pipe_shared_t *sh, int is_write)
 {
     pipe_end_t *e;
@@ -88,7 +83,7 @@ static pipe_end_t *pipe_end_new(pipe_shared_t *sh, int is_write)
     return e;
 }
 
-/* 拆端点：计数器-1 并释放缓冲引用（可能释放缓冲本身）。 */
+/* 拆端点并释放缓冲引用 */
 static void pipe_end_free(pipe_end_t *e)
 {
     pipe_shared_t *sh;
@@ -107,8 +102,7 @@ static void pipe_end_free(pipe_end_t *e)
     pipe_shared_release(sh);
 }
 
-/* 建一个端点句柄：mnt 为端点所在的挂载点（匿名 pipe 用假位，fifo 用 pipefs 真位），
- * open_count +1 与 vfs_close 的 unpin 配对。失败返回 NULL。 */
+/* 建端点句柄，挂载点计数配对 */
 vfs_file_t *pipe_make_file(pipe_shared_t *sh, int is_write,
                            vfs_mount_t *mnt, int flags)
 {
@@ -135,9 +129,7 @@ vfs_file_t *pipe_make_file(pipe_shared_t *sh, int is_write,
     return f;
 }
 
-/* 阻塞等对端 open：读端等写端，写端等读端。调用前自己的端点必须已建
- * （对端靠计数器看见你），对称等待故无死锁。只能在可调度的 syscall
- * 上下文调用（内部 yield，不持锁）。 */
+/* 阻塞等对端打开 */
 void pipe_wait_peer(pipe_shared_t *sh, int is_write)
 {
     for (;;)
@@ -175,7 +167,7 @@ static int64_t pipe_read(vfs_file_t *f, void *buf, uint64_t len)
         int w = sh->writers;
 
         spin_unlock_irqrestore(&sh->lock, flags);
-        /* 写端全关=EOF；否则 AGAIN，靠 syscall 层 yield 重试 */
+        /* 写端全关返回结束，否则重试 */
         return w ? VFS_ERR_AGAIN : 0;
     }
     while (n < len && sh->count > 0)
@@ -205,7 +197,7 @@ static int64_t pipe_write(vfs_file_t *f, const void *buf, uint64_t len)
     if (!sh->readers)
     {
         spin_unlock_irqrestore(&sh->lock, flags);
-        return VFS_ERR_INVAL; /* broken pipe */
+        return VFS_ERR_INVAL; /* 无读端 */
     }
     if (sh->count == PIPE_BUF_SIZE)
     {
@@ -238,7 +230,7 @@ const fs_driver_t pipe_driver = {
     .close = pipe_close,
     .read = pipe_read,
     .write = pipe_write,
-    /* open/seek 等全 NULL：端点只经 pipe_make_file 创建，seek 得 NOTSUP */
+    /* 端点只经专用接口创建 */
 };
 
 int pipe_create(vfs_file_t **r_out, vfs_file_t **w_out)
@@ -263,8 +255,7 @@ int pipe_create(vfs_file_t **r_out, vfs_file_t **w_out)
     wf = pipe_make_file(sh, 1, &g_pipe_mount, VFS_O_WRONLY);
     if (wf == NULL)
     {
-        /* 回滚读端：pipe_close 拆端点引用（缓冲引用归零即释放），
-         * 再配平 make_file 做过的 open_count+1，并释放句柄本身 */
+        /* 回滚读端并配平计数 */
         pipe_close(rf);
         __sync_fetch_and_sub(&g_pipe_mount.open_count, 1);
         kfree(rf);

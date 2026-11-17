@@ -25,9 +25,9 @@ LoadElf64(
         return Status;
     }
 
-    //
-    // Read ELF header
-    //
+
+    /* Read ELF header */
+
     Elf64_Ehdr Ehdr;
     ReadSize = sizeof(Ehdr);
     Status = File->Read(File, &ReadSize, &Ehdr);
@@ -46,9 +46,9 @@ LoadElf64(
 
     *EntryPoint = (EFI_PHYSICAL_ADDRESS)Ehdr.e_entry;
 
-    //
-    // Read program headers
-    //
+
+    /* Read program headers */
+
     ReadSize = Ehdr.e_phnum * Ehdr.e_phentsize;
     Elf64_Phdr *Phdrs = AllocatePool(ReadSize);
     if (Phdrs == NULL)
@@ -71,9 +71,9 @@ LoadElf64(
 
     *KernelBase = MAX_ADDRESS;
 
-    //
-    // Load PT_LOAD segments
-    //
+
+    /* Load PT_LOAD segments */
+
     for (UINTN i = 0; i < Ehdr.e_phnum; i++)
     {
         Elf64_Phdr *Ph = &Phdrs[i];
@@ -85,9 +85,9 @@ LoadElf64(
         UINTN Pages = EFI_SIZE_TO_PAGES(Ph->p_memsz);
         EFI_PHYSICAL_ADDRESS Addr = (EFI_PHYSICAL_ADDRESS)Ph->p_paddr;
 
-        //
-        // Must use EfiLoaderCode: OVMF NX policy marks EfiLoaderData non-executable
-        //
+
+        /* Must use EfiLoaderCode: OVMF NX policy marks EfiLoaderData non-executable */
+
         Status = gBS->AllocatePages(
             AllocateAddress,
             EfiLoaderCode,
@@ -105,14 +105,14 @@ LoadElf64(
             *KernelBase = Addr;
         }
 
-        //
-        // Zero BSS
-        //
+
+        /* Zero BSS */
+
         SetMem((VOID *)(UINTN)Addr, (UINTN)Ph->p_memsz, 0);
 
-        //
-        // Load file data
-        //
+
+        /* Load file data */
+
         Status = File->SetPosition(File, Ph->p_offset);
         if (EFI_ERROR(Status))
         {

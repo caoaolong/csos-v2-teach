@@ -30,9 +30,7 @@ typedef struct input_event
 #define INPUT_REL_X 0x00
 #define INPUT_REL_Y 0x01
 
-/*
- * 按键编码
- */
+/* 按键编码 */
 #define INPUT_BTN_MOUSE 0x110
 #define INPUT_BTN_LEFT 0x110
 #define INPUT_BTN_RIGHT 0x111
@@ -90,9 +88,7 @@ typedef struct input_event
 #define INPUT_KEY_PRESS 1
 #define INPUT_KEY_RELEASE 0
 
-/*
- * keycode → ASCII
- */
+/* keycode → ASCII */
 static inline char input_key_to_ascii(uint16_t code)
 {
     switch (code)

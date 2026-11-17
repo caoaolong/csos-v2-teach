@@ -33,11 +33,11 @@ void serial_init()
 {
     outb(COM1 + 1, 0x00); /* 关闭中断 */
     outb(COM1 + 3, 0x80); /* 打开 DLAB */
-    outb(COM1 + 0, 0x03); /* 115200/3 = 38400 baud */
+    outb(COM1 + 0, 0x03); /* 38400 波特率 */
     outb(COM1 + 1, 0x00);
     outb(COM1 + 3, 0x03); /* 8N1 */
     outb(COM1 + 2, 0xC7); /* 启用 FIFO */
-    outb(COM1 + 4, 0x0B); /* IRQ、RTS/DSR */
+    outb(COM1 + 4, 0x0B); /* 使能 IRQ、RTS/DSR */
 }
 
 void put_string(const char *s)
@@ -78,8 +78,8 @@ static int64_t ttyS0_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
         return 0;
 
     flags = spin_lock_irqsave(&g_serial_lock);
-    while (n < len && (inb(COM1 + 5) & 0x01)) /* LSR: data ready */
-        p[n++] = inb(COM1 + 0);               /* RBR */
+    while (n < len && (inb(COM1 + 5) & 0x01)) /* LSR 有数据 */
+        p[n++] = inb(COM1 + 0);               /* 读 RBR */
     spin_unlock_irqrestore(&g_serial_lock, flags);
 
     return n ? (int64_t)n : VFS_ERR_AGAIN;

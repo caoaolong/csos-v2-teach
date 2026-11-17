@@ -21,7 +21,7 @@ void panic(const char *fmt, ...)
         n = 0;
     }
 
-    /* 先画屏：即使串口锁恰好被占（极端重入），屏上已有信息 */
+    /* 先画屏再写串口 */
     fb_console_panic_page("KERNEL PANIC", g_panic_buf);
 
     put_string("[PANIC] ");

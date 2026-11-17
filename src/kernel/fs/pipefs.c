@@ -9,7 +9,7 @@
 typedef struct pipefs_node
 {
     char name[VFS_NAME_MAX];
-    pipe_shared_t *sh; /* 节点持有 1 份引用，永不释放（无 unlink） */
+    pipe_shared_t *sh; /* 节点持有引用 */
     struct pipefs_node *next;
 } pipefs_node_t;
 
@@ -47,13 +47,13 @@ static int pipefs_mkfifo(vfs_mount_t *m, const char *rel)
     for (p = rel; *p != '\0'; p++)
     {
         if (*p == '/')
-            return VFS_ERR_INVAL; /* 扁平空间：不接受子目录 */
+            return VFS_ERR_INVAL; /* 不接受子目录 */
     }
 
     sh = pipe_shared_new();
     if (sh == NULL)
         return VFS_ERR_NOMEM;
-    pipe_shared_hold(sh); /* 节点持有 */
+    pipe_shared_hold(sh); /* 节点持有引用 */
     n = (pipefs_node_t *)kmalloc(sizeof(*n));
     if (n == NULL)
     {
@@ -95,16 +95,15 @@ static int pipefs_open(vfs_mount_t *m, const char *rel, int flags, vfs_file_t *f
         return VFS_ERR_NOTDIR;
     accmode = flags & 0x03;
     if (accmode != VFS_O_RDONLY && accmode != VFS_O_WRONLY)
-        return VFS_ERR_INVAL; /* O_RDWR 暂不支持：端点分裂，无合一端 */
-    /* O_CREAT/O_TRUNC/O_APPEND 对 fifo 无意义：存在即用，不存在也不建（建是 mkfifo 的活） */
+        return VFS_ERR_INVAL; /* 暂不支持读写双开 */
+    /* 创建与截断标志对命名管道无意义 */
 
     irq = spin_lock_irqsave(&sb->lock);
     n = pipefs_find_locked(sb, rel);
     spin_unlock_irqrestore(&sb->lock, irq);
     if (n == NULL)
         return VFS_ERR_NOENT;
-    /* 节点永生：找到即稳定，无需 refs 钉住。
-     * flags 原样透传（含 O_NONBLOCK，供 syscall 层做轮询；方向判定只看低 2 位）。 */
+    /* 节点永生，直接建端点 */
     pf = pipe_make_file(n->sh, accmode == VFS_O_WRONLY, m, flags);
     if (pf == NULL)
         return VFS_ERR_NOMEM;
@@ -136,7 +135,7 @@ static int pipefs_stat(vfs_mount_t *m, const char *rel, uint64_t *size_out,
     if (n == NULL)
         return VFS_ERR_NOENT;
     if (size_out != NULL)
-        *size_out = 0; /* 管道无固定大小 */
+        *size_out = 0; /* 管道大小为 0 */
     if (is_dir_out != NULL)
         *is_dir_out = 0;
     return VFS_OK;
@@ -147,7 +146,7 @@ static int pipefs_opendir(vfs_mount_t *m, const char *rel, vfs_dir_t *d)
     if (m == NULL || rel == NULL || d == NULL)
         return VFS_ERR_INVAL;
     if (rel[0] != '\0')
-        return VFS_ERR_NOTDIR; /* 只有 /pipe 根是目录 */
+        return VFS_ERR_NOTDIR; /* 只有根是目录 */
     d->priv = m->priv;
     d->pos = NULL;
     return VFS_OK;
@@ -167,7 +166,7 @@ static int pipefs_readdir(vfs_dir_t *d, vfs_dirent_t *out)
     if (next == NULL)
     {
         spin_unlock_irqrestore(&sb->lock, irq);
-        return VFS_ERR_NOENT; /* 遍历结束（节点永生，无需 refs 钉住） */
+        return VFS_ERR_NOENT; /* 遍历结束 */
     }
     kernel_strncpy(out->name, next->name, sizeof(out->name));
     out->is_dir = 0;
@@ -208,7 +207,7 @@ static int pipefs_unmount(vfs_mount_t *m)
 
     if (sb == NULL)
         return VFS_OK;
-    /* 摘掉所有节点并释放节点的缓冲引用；仍打开的端点靠自己的引用续命 */
+    /* 摘掉所有节点并释放引用 */
     n = sb->head;
     sb->head = NULL;
     for (; n != NULL; n = next)
@@ -232,7 +231,7 @@ const fs_driver_t pipefs_driver = {
     .opendir = pipefs_opendir,
     .readdir = pipefs_readdir,
     .closedir = pipefs_closedir,
-    /* close/read/write/seek 全走 f->drv（pipe_driver，由 pipe_make_file 指定） */
+    /* 读写关闭走管道驱动 */
 };
 
 void init_pipefs()

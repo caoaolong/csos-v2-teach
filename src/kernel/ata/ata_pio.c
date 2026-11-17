@@ -5,7 +5,7 @@
 #include <kernel/cpu.h>
 #include <kernel/string.h>
 
-/* ---- 端口 ---- */
+/* 端口定义 */
 #define PIO_PRIMARY_IO 0x1F0u
 #define PIO_PRIMARY_CTRL 0x3F6u
 #define PIO_SECONDARY_IO 0x170u
@@ -22,7 +22,7 @@
 #define REG_STATUS(io) ((uint16_t)((io) + 7))
 #define REG_CMD(io) ((uint16_t)((io) + 7))
 
-/* ---- 状态位 ---- */
+/* 状态位定义 */
 #define ST_ERR 0x01u
 #define ST_DRQ 0x08u
 #define ST_SRV 0x10u
@@ -30,7 +30,7 @@
 #define ST_RDY 0x40u
 #define ST_BSY 0x80u
 
-/* ---- 命令 ---- */
+/* 命令定义 */
 #define CMD_READ_PIO 0x20u
 #define CMD_READ_PIO_EXT 0x24u
 #define CMD_WRITE_PIO 0x30u
@@ -64,8 +64,7 @@ static uint8_t g_boot_drive = ATA_NO_BOOT_DRIVE;
 static int g_pio_ready;
 static spinlock_t g_pio_lock = SPINLOCK_INIT;
 
-/* 块端口 IO：kernel.h 只提供单字节/单字 inb/outb/inw/outw，
- * 扇区批量传输的 rep insw/outsw 保留在此 */
+/* 块端口批量传输 */
 static inline void pio_insw(uint16_t port, uint16_t *buf, uint32_t words)
 {
     __asm__ volatile("rep insw"
@@ -76,7 +75,7 @@ static inline void pio_insw(uint16_t port, uint16_t *buf, uint32_t words)
 
 static inline void pio_outsw(uint16_t port, const uint16_t *buf, uint32_t words)
 {
-    /* rep outsw 读 DS:(R)SI，buf 视为可变指针推进 */
+    /* rep outsw 按 SI 推进 */
     uint16_t *tmp = (uint16_t *)(uintptr_t)buf;
     __asm__ volatile("rep outsw"
                      : "+S"(tmp), "+c"(words)
@@ -84,7 +83,7 @@ static inline void pio_outsw(uint16_t port, const uint16_t *buf, uint32_t words)
                      : "memory");
 }
 
-/* 400ns 延迟：读 AltStatus 4 次 */
+/* 400ns 延迟，读状态口 4 次 */
 static inline void pio_delay400ns(uint16_t ctrl)
 {
     (void)inb(ctrl);
@@ -112,7 +111,7 @@ static int pio_wait_not_busy(uint16_t io)
     return ATA_ERR_TIMEOUT;
 }
 
-/* 等待 DRQ=1（BSY=0 前提下）；遇 ERR/DF 返回 I/O 错误 */
+/* 等待 DRQ 就绪，遇错误返回 I/O 错误 */
 static int pio_wait_drq(uint16_t io)
 {
     int i;
@@ -146,7 +145,7 @@ static int pio_wait_ready(uint16_t io)
     return 0;
 }
 
-/* ---- LBA28 / LBA48 单命令块（调用前已持锁，n ∈ [1,256]） ---- */
+/* LBA28/LBA48 单命令块，调用前已持锁 */
 
 static int pio_read_chunk(pio_drive_t *d, uint64_t lba, uint32_t n, void *buf)
 {
@@ -166,7 +165,7 @@ static int pio_read_chunk(pio_drive_t *d, uint64_t lba, uint32_t n, void *buf)
 
     if (use48)
     {
-        uint16_t count16 = (uint16_t)n; /* n=256 -> 0x0100，硬件恰为 256 扇区 */
+        uint16_t count16 = (uint16_t)n; /* n=256 时硬件表示为 256 扇区 */
 
         outb(REG_DRIVE(io), (uint8_t)(0x40 | (d->slave << 4)));
         pio_delay400ns(d->ctrl);
@@ -279,7 +278,7 @@ static int pio_flush_drive(pio_drive_t *d)
     return pio_wait_not_busy(io);
 }
 
-/* ---- IDENTIFY 探测 ---- */
+/* IDENTIFY 探测 */
 
 static void pio_save_model(pio_drive_t *d, const uint16_t *id)
 {
@@ -311,19 +310,19 @@ static int pio_probe(uint16_t io, uint16_t ctrl, uint8_t slave, pio_drive_t *out
 
     pio_select(io, ctrl, slave);
 
-    /* 浮空总线读回 0x00/0xFF：无设备，直接返回 */
+    /* 浮空总线读回 0x00/0xFF 表示无设备 */
     st = inb(REG_STATUS(io));
     if (st == 0x00 || st == 0xFF)
         return ATA_ERR_NODEV;
 
-    /* 选中后若仍 BSY，先等待再发 IDENTIFY，避免命令被忽略 */
+    /* 选中后若仍忙，先等待再发 IDENTIFY */
     if (st & ST_BSY)
     {
         if (pio_wait_not_busy(io) != 0)
             return ATA_ERR_TIMEOUT;
     }
 
-    /* 预清扇区计数/LBA，IDENTIFY 要求 */
+    /* 预清扇区计数和 LBA */
     outb(REG_COUNT(io), 0);
     outb(REG_LBA_LO(io), 0);
     outb(REG_LBA_MID(io), 0);
@@ -331,7 +330,7 @@ static int pio_probe(uint16_t io, uint16_t ctrl, uint8_t slave, pio_drive_t *out
     outb(REG_CMD(io), CMD_IDENTIFY);
 
     if (inb(REG_STATUS(io)) == 0)
-        return ATA_ERR_NODEV; /* 发送后状态归零：无设备 */
+        return ATA_ERR_NODEV; /* 发命令后状态归零表示无设备 */
 
     if (pio_wait_not_busy(io) != 0)
         return ATA_ERR_TIMEOUT;
@@ -339,7 +338,7 @@ static int pio_probe(uint16_t io, uint16_t ctrl, uint8_t slave, pio_drive_t *out
     mid = inb(REG_LBA_MID(io));
     hi = inb(REG_LBA_HI(io));
 
-    /* ATAPI 签名：暂不驱动，标记后跳过 */
+    /* ATAPI 设备暂不驱动，标记后跳过 */
     if ((mid == 0x14 && hi == 0xEB) || (mid == 0x69 && hi == 0x96))
     {
         out->present = 1;
@@ -413,7 +412,7 @@ static int pio_init()
     if (!found)
     {
         fput_string("[ATA-PIO] no ATA drives (QEMU: add -drive if=id,index=N)\n");
-        /* 无盘不视为致命错误：允许无盘启动，后续 read/write 返回 NODEV */
+        /* 无盘允许启动，后续读写返回 NODEV */
         g_pio_ready = 1;
         return -2;
     }

@@ -13,13 +13,13 @@ volatile uint64_t jiffies;
 void handler_spurious(exception_frame_t *frame)
 {
     (void)frame;
-    /* Spurious：通常不写 EOI */
+    /* Spurious 中断不写 EOI */
 }
 
 void handler_timer(exception_frame_t *frame)
 {
     (void)frame;
-    /* 多核都开 timer 时只让 BSP 推进全局 jiffies，避免倍速 */
+    /* 仅 BSP 推进全局 jiffies */
     if (is_bsp())
     {
         jiffies++;
@@ -54,7 +54,7 @@ uint64_t ms_to_jiffies(uint64_t ms)
         return 0;
 
     jf = (ms * (uint64_t)g_timer_hz) / 1000ull;
-    /* 亚 tick 请求至少等待一个 tick，避免空转立刻返回 */
+    /* 亚 tick 请求至少等待一个 tick */
     if (jf == 0)
         jf = 1;
     return jf;
@@ -69,6 +69,6 @@ void msleep(uint64_t ms)
 {
     if (ms == 0)
         return;
-    /* 阻塞：离开就绪环，到点由 timer 唤醒；不再占用 RR 时间片 */
+    /* 阻塞等待，到点由 timer 唤醒 */
     sched_sleep_jiffies(ms_to_jiffies(ms));
 }

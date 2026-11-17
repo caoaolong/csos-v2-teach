@@ -3,18 +3,18 @@
 #include <kernel/serial.h>
 #include <stdint.h>
 
-#define HEAP_MAGIC 0x48454150u /* 'HEAP' */
+#define HEAP_MAGIC 0x48454150u /* 魔数 */
 #define HEAP_ALIGN 16u
 #define HEAP_INIT_PAGES 4u
 
 #define HEAP_MIN_TOTAL (sizeof(heap_block_t) + HEAP_ALIGN)
 
-/* 块头固定 32 字节，保证页对齐块的 payload 按 16 字节对齐 */
+/* 块头 32 字节保证对齐 */
 typedef struct heap_block
 {
-    size_t size; /* 整块大小（含本头） */
+    size_t size; /* 整块大小 */
     uint32_t magic;
-    uint32_t used; /* 0 空闲，1 已用 */
+    uint32_t used; /* 空闲标志 */
     struct heap_block *next_free;
     uint64_t _pad;
 } heap_block_t;
@@ -47,7 +47,7 @@ static void *block_payload(heap_block_t *block)
     return (void *)(block + 1);
 }
 
-/* 按地址排序插入，并与左右相邻空闲块合并 */
+/* 按地址插入并合并相邻空块 */
 static void freelist_insert(heap_block_t *block)
 {
     heap_block_t *prev = NULL;

@@ -6,14 +6,10 @@
 #include <kernel/string.h>
 #include <kernel/memory/heap.h>
 
-/*
- * 单用户任务过渡：全局锁保护当前任务表。
- * 多任务/SMP 后改为 per-task 锁，且 fd_get 需 get/put 引用
- *（否则 read/write 取到 vf 后被他核 close 释放会有 UAF）。
- */
+/* fd 表：全局锁保护当前任务表 */
 static spinlock_t g_fd_lock = SPINLOCK_INIT;
 
-/* 调用者已持锁：包装 vf 并装入最小空闲槽 */
+/* 包装 vf 装入最小空闲槽，调用者已持锁 */
 static int fd_install_locked(struct task *t, vfs_file_t *vf)
 {
     fd_entry_t *e;
@@ -35,7 +31,7 @@ static int fd_install_locked(struct task *t, vfs_file_t *vf)
         }
     }
     kfree(e);
-    return -1; /* EMFILE：表满 */
+    return -1; /* 表满 */
 }
 
 void fd_init_std(struct task *t)
@@ -49,13 +45,13 @@ void fd_init_std(struct task *t)
     if (t == NULL)
         return;
 
-    /* task_create 已清零 fds，这里只做 open（open 失败的槽保持 NULL） */
+    /* task_create 已清零 fds，只做 open */
     rc0 = vfs_open("/dev/kbd0", VFS_O_RDONLY, &f0);
     rc1 = vfs_open("/dev/console", VFS_O_WRONLY, &f1);
     rc2 = vfs_open("/dev/console", VFS_O_WRONLY, &f2);
 
     flags = spin_lock_irqsave(&g_fd_lock);
-    /* 标准流固定占 0/1/2，不走最小空闲分配 */
+    /* 标准流固定占 0/1/2 */
     if (rc0 == VFS_OK)
     {
         fd_entry_t *e = (fd_entry_t *)kmalloc(sizeof(*e));
@@ -143,7 +139,7 @@ int fd_install(vfs_file_t *vf)
     return fd;
 }
 
-/* 调用方已持 g_fd_lock：关闭指定任务的 fd；0=成功（vf/ep 为待释放物，可为 NULL），-1=EBADF */
+/* 关闭指定任务的 fd，调用方已持锁 */
 static int fd_close_for_locked(task_t *t, int fd, vfs_file_t **vfp, fd_entry_t **ep)
 {
     fd_entry_t *e = t->fds[fd];
@@ -180,7 +176,7 @@ int fd_close(int fd)
     if (rc != 0)
         return VFS_ERR_INVAL; /* EBADF */
 
-    /* 引用归零才真正 vfs_close + 释放；锁外做，避免嵌套 devfs 锁 */
+    /* 引用归零才真正关闭，锁外执行 */
     if (vf != NULL)
     {
         vfs_close(vf);
@@ -189,7 +185,7 @@ int fd_close(int fd)
     return VFS_OK;
 }
 
-/* fork：子表指针复用父描述（refs++，offset 共享，语义同 dup2 全表版） */
+/* fork 子表复用父描述 */
 void fd_clone_table(task_t *dst, task_t *src)
 {
     uint64_t flags;
@@ -207,7 +203,7 @@ void fd_clone_table(task_t *dst, task_t *src)
     spin_unlock_irqrestore(&g_fd_lock, flags);
 }
 
-/* 任务回收：逐项 close（引用归零才真正 vfs_close） */
+/* 任务回收，逐项关闭 */
 void fd_table_cleanup(task_t *t)
 {
     fd_entry_t *es[FD_MAX];
@@ -266,7 +262,7 @@ int fd_dup2(int oldfd, int newfd)
         spin_unlock_irqrestore(&g_fd_lock, flags);
         return newfd;
     }
-    /* 先摘掉 newfd 原有描述（引用归零的延迟到锁外释放） */
+    /* 先摘掉新 fd 原有描述 */
     victim = t->fds[newfd];
     if (victim != NULL)
     {

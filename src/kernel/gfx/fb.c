@@ -2,9 +2,9 @@
 #include <kernel/gfx/layout.h>
 #include <kernel/serial.h>
 
-/* EFI_GRAPHICS_PIXEL_FORMAT */
-#define FB_PIXEL_RGB 0 /* byte order R,G,B,X */
-#define FB_PIXEL_BGR 1 /* byte order B,G,R,X */
+/* 像素格式定义 */
+#define FB_PIXEL_RGB 0 /* 内存顺序 R,G,B,X */
+#define FB_PIXEL_BGR 1 /* 内存顺序 B,G,R,X */
 
 uint32_t fb_pack_pixel(uint32_t xrgb, uint32_t format)
 {
@@ -14,11 +14,11 @@ uint32_t fb_pack_pixel(uint32_t xrgb, uint32_t format)
 
     if (format == FB_PIXEL_BGR)
     {
-        /* LE store of 0x00RRGGBB => memory B,G,R,X */
+        /* 小端存储转 BGR */
         return (r << 16) | (g << 8) | b;
     }
 
-    /* FB_PIXEL_RGB: LE store of 0x00BBGGRR => memory R,G,B,X */
+    /* 小端存储转 RGB */
     return (b << 16) | (g << 8) | r;
 }
 
@@ -82,7 +82,7 @@ static void fb_draw_image_at(boot_info_t *boot,
                 continue;
 
             src = pixels[y * img_w + x];
-            /* 源图里纯黑多为 PNG 透明转出的 0，跳过以保留背景 */
+            /* 纯黑像素跳过以保留背景 */
             if (src == 0)
                 continue;
 
@@ -118,7 +118,7 @@ void fb_draw_logo_splash(boot_info_t *boot,
     if (boot == NULL || boot->framebuffer_base == 0 || pixels == NULL)
         return;
 
-    /* Same formula as EfiBoot DrawBootWaitScreen(): center the logo only. */
+    /* 与启动画面同公式，居中徽标 */
     fb_fill(boot, LOGO_SPLASH_BG_RGB);
     fb_draw_image_centered(boot, pixels, img_w, img_h);
 }

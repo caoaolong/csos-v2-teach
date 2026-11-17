@@ -13,32 +13,32 @@
 #define CON_MIN_COLS 20
 #define CON_CURSOR_BLINK_MS 500u
 
-static uint32_t *s_fb;    /* 帧缓冲基址（32 位像素数组） */
-static uint32_t s_stride; /* 每扫描行像素数（含行尾填充） */
-static uint32_t s_width;  /* 屏幕宽（像素） */
-static uint32_t s_height; /* 屏幕高（像素） */
-static uint32_t s_format; /* 像素格式（RGB/BGR，见 FB_PIXEL_*） */
-static uint32_t s_fg;     /* 前景色（已按 format 打包） */
-static uint32_t s_bg;     /* 背景色（清屏/滚屏补行用） */
-static uint32_t s_cols;   /* 文本列数（= 宽 / 8） */
-static uint32_t s_rows;   /* 文本行数（= 文本区高 / 16） */
+static uint32_t *s_fb;    /* 帧缓冲基址 */
+static uint32_t s_stride; /* 每扫描行像素数 */
+static uint32_t s_width;  /* 屏幕宽 */
+static uint32_t s_height; /* 屏幕高 */
+static uint32_t s_format; /* 像素格式 */
+static uint32_t s_fg;     /* 前景色 */
+static uint32_t s_bg;     /* 背景色 */
+static uint32_t s_cols;   /* 文本列数 */
+static uint32_t s_rows;   /* 文本行数 */
 static uint32_t s_top;    /* 文本区首像素行 */
 static uint32_t s_cx;     /* 光标列 */
 static uint32_t s_cy;     /* 光标行 */
-static int s_ready;       /* 初始化完成标志（1 才可输出） */
-static int s_detached;    /* 屏幕已交 compositor：写屏/tick/光标全停，只走串口 */
+static int s_ready;       /* 初始化完成标志 */
+static int s_detached;    /* 屏幕已交合成器，只走串口 */
 static spinlock_t s_lock = SPINLOCK_INIT;
 
 static char *s_text;
 static uint32_t s_cap_cols;
 static uint32_t s_cap_rows;
 
-/* 块光标状态：phase=1 表示当前已反白画出；next_ms 为下次翻转时刻 */
+/* 块光标状态 */
 static int s_cursor_phase;
 static uint64_t s_cursor_next_ms;
 static int s_cursor_enabled;
 
-/* 重叠安全的像素搬运：cfb_copyarea 的极简版，按 8 字节分块 */
+/* 重叠安全的像素搬运 */
 static void fb_memmove_pixels(uint32_t *dst, const uint32_t *src, uint32_t n)
 {
     uint64_t *d64;
@@ -49,7 +49,7 @@ static void fb_memmove_pixels(uint32_t *dst, const uint32_t *src, uint32_t n)
 
     if (dst < src)
     {
-        /* 前向：dst 在 src 之前，从头拷安全 */
+        /* 前向从头拷贝 */
         d64 = (uint64_t *)dst;
         s64 = (const uint64_t *)src;
         while (n >= 2 &&
@@ -66,7 +66,7 @@ static void fb_memmove_pixels(uint32_t *dst, const uint32_t *src, uint32_t n)
     }
     else
     {
-        /* 后向：dst 在 src 之后，从尾拷避免覆盖源 */
+        /* 后向从尾拷贝 */
         dst += n;
         src += n;
         d64 = (uint64_t *)dst;
@@ -85,10 +85,7 @@ static void fb_memmove_pixels(uint32_t *dst, const uint32_t *src, uint32_t n)
     }
 }
 
-/*
- * fb_copyarea：矩形像素块搬运（cfb_copyarea 对应物）。
- * 坐标均为帧缓冲绝对像素；按垂直方向选拷贝顺序，行内用 memmove。
- */
+/* 矩形像素块搬运 */
 static void fb_copyarea_locked(uint32_t sx, uint32_t sy,
                                uint32_t w, uint32_t h,
                                uint32_t dx, uint32_t dy)
@@ -122,7 +119,7 @@ static void fb_copyarea_locked(uint32_t sx, uint32_t sy,
     }
 }
 
-/* fb_fillrect：矩形涂色（cfb_fillrect 对应物），按行以 64 位 pattern 填充 */
+/* 矩形涂色 */
 static void fb_fillrect_locked(uint32_t x, uint32_t y,
                                uint32_t w, uint32_t h, uint32_t pixel)
 {
@@ -167,7 +164,7 @@ static void con_text_clear_locked(char ch)
         s_text[i] = ch;
 }
 
-/* 按当前 cols/rows 重建字符缓冲；kmalloc 失败则退化为无缓冲（仅像素面工作） */
+/* 重建字符缓冲，失败则无缓冲 */
 static void con_text_alloc_locked(uint32_t cols, uint32_t rows)
 {
     char *p;
@@ -200,7 +197,7 @@ static void con_text_alloc_locked(uint32_t cols, uint32_t rows)
     con_text_clear_locked(' ');
 }
 
-/* 字符网格式上滚一行：KB 级前向搬运（dst<src，从头拷安全） */
+/* 字符网格上滚一行 */
 static void con_text_scroll_locked()
 {
     uint32_t r;
@@ -233,10 +230,10 @@ static void con_scroll_locked()
     if (s_rows == 0)
         return;
 
-    /* 权威内容先滚字符网格（KB 级），再搬像素面 */
+    /* 先滚字符网格再搬像素 */
     con_text_scroll_locked();
 
-    /* 文本区整体上移一行字高：copyarea + 清末行（fbcon 滚屏序列） */
+    /* 文本区上移一行字高 */
     h = (s_rows - 1) * FONT_H;
     if (h > 0)
         fb_copyarea_locked(0, s_top + FONT_H, s_width, h, 0, s_top);
@@ -272,7 +269,7 @@ static void con_draw_locked(uint32_t px, uint32_t py, const uint8_t *g)
     }
 }
 
-/* 取指定格字符（无缓冲/越界时视为空格） */
+/* 取指定格字符，缺省为空格 */
 static char con_cell_char_locked(uint32_t col, uint32_t row)
 {
     if (s_text != NULL && row < s_rows && col < s_cols &&
@@ -281,7 +278,7 @@ static char con_cell_char_locked(uint32_t col, uint32_t row)
     return ' ';
 }
 
-/* 反白重画一格：字模 1 位用 bg、0 位用 fg（正常绘制的反色） */
+/* 反白重画一格 */
 static void con_draw_inverted_locked(uint32_t px, uint32_t py, const uint8_t *g)
 {
     uint32_t r;
@@ -297,7 +294,7 @@ static void con_draw_inverted_locked(uint32_t px, uint32_t py, const uint8_t *g)
     }
 }
 
-/* 在 (s_cx,s_cy) 画/擦反白块光标；调用者须持有锁 */
+/* 画擦反白块光标，调用者持锁 */
 static void con_cursor_paint_locked(int show)
 {
     uint32_t px;
@@ -328,7 +325,7 @@ static void con_cursor_hide_locked()
     }
 }
 
-/* 写屏后调用：重画光标并重置闪烁周期，避免刚写完就熄灭 */
+/* 写屏后重画光标并重置周期 */
 static void con_cursor_restart_locked()
 {
     con_cursor_hide_locked();
@@ -372,7 +369,7 @@ static void con_putchar_locked(char ch)
         return;
     }
 
-    /* 越界字节显示为 '?'，不丢光标进度 */
+    /* 越界字节显示问号 */
     if (s_text != NULL && s_cy < s_rows && s_cx < s_cols)
         s_text[s_cy * s_cap_cols + s_cx] = ch;
     con_draw_locked(s_cx * FONT_W, s_top + s_cy * FONT_H, fb_font_glyph(ch));
@@ -404,10 +401,7 @@ void fb_console_init_boot(boot_info_t *boot)
     s_cy = 0;
     s_ready = 0;
 
-    /*
-     * 布局：logo 居中，能在其下方放下 ≥CON_MIN_ROWS 行则画 splash
-     * 并把文本区开在 logo 之下；否则跳过 splash，全屏当控制台用。
-     */
+    /* 布局：徽标居中，文本区在徽标之下 */
     s_top = 0;
     s_cols = s_width / FONT_W;
     s_rows = s_height / FONT_H;
@@ -444,7 +438,7 @@ void fb_console_init_boot(boot_info_t *boot)
     con_text_alloc_locked(s_cols, s_rows);
     con_fill(s_top, s_height, s_bg);
     s_ready = 1;
-    /* 开机即画出实心光标；timer 启动后 tick 接管闪烁 */
+    /* 开机画出实心光标 */
     s_cursor_enabled = 1;
     s_cursor_phase = 0;
     con_cursor_restart_locked();
@@ -466,7 +460,7 @@ void fb_console_write(const void *buf, uint64_t len)
         spin_unlock_irqrestore(&s_lock, flags);
         return;
     }
-    /* 先擦光标再写，避免滚屏把反白块搬进像素面 */
+    /* 先擦光标再写 */
     con_cursor_hide_locked();
     for (i = 0; i < len; i++)
         con_putchar_locked((char)p[i]);
@@ -502,7 +496,7 @@ void fb_console_tick()
 
 static void con_reset_full_locked(uint32_t bg)
 {
-    /* 整屏重绘会抹掉光标块，只复位状态，具体画不画由调用方决定 */
+    /* 整屏重绘只复位状态 */
     s_cursor_phase = 0;
     con_fill(0, s_height, bg);
     s_top = 0;
@@ -529,7 +523,7 @@ void fb_console_clear_full()
     spin_unlock_irqrestore(&s_lock, flags);
 }
 
-/* 按文字模型重画整个文本区：attach 时调用，把 compositor 画过的地方恢复 */
+/* 按文字模型重画文本区 */
 static void con_repaint_locked()
 {
     uint32_t r;
@@ -549,7 +543,7 @@ void fb_console_detach()
     flags = spin_lock_irqsave(&s_lock);
     if (s_ready)
     {
-        con_cursor_hide_locked(); /* 擦掉反白光标块，别留在 compositor 画面上 */
+        con_cursor_hide_locked(); /* 擦掉反白光标块 */
         s_detached = 1;
     }
     spin_unlock_irqrestore(&s_lock, flags);
@@ -590,7 +584,7 @@ static void con_border_locked(uint32_t color)
     }
 }
 
-/* 在文本行居中画一行（遇 \0 或 \n 截断，超宽裁剪，不滚屏） */
+/* 在文本行居中画一行 */
 static void con_draw_centered_locked(uint32_t row, const char *s)
 {
     uint32_t len = 0;
@@ -636,15 +630,15 @@ void fb_console_panic_page(const char *title, const char *msg)
         spin_unlock_irqrestore(&s_lock, flags);
         return;
     }
-    s_detached = 0; /* panic 无条件夺回屏幕 */
+    s_detached = 0; /* panic 夺回屏幕 */
 
     con_reset_full_locked(fb_pack_pixel(PANIC_BG_RGB, s_format));
-    /* 错误页不闪光标：关使能并确保已擦除（reset 已清 phase） */
+    /* 错误页不闪光标 */
     s_cursor_enabled = 0;
     if (s_width > 96 && s_height > 96)
         con_border_locked(s_fg);
 
-    /* 先数消息行（截断到能放下的数量）：标题 + 空行 + 消息 + 空行 + 提示 */
+    /* 先数消息行 */
     maxlines = (s_rows > 4) ? s_rows - 4 : 0;
     nlines = 0;
     p = msg;

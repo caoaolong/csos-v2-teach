@@ -16,7 +16,7 @@
 #define IOAPIC_REDTBL_LEVEL (1u << 15)
 #define IOAPIC_REDTBL_ACTIVE_LOW (1u << 13)
 
-/* MADT ISO flags：极性 / 触发（MPS INTI） */
+/* MADT 中断覆写标志 */
 #define ACPI_MADT_POLARITY_MASK 0x3u
 #define ACPI_MADT_TRIGGER_MASK 0xCu
 
@@ -24,7 +24,7 @@ typedef struct ioapic_dev
 {
     volatile uint32_t *base;
     uint32_t gsi_base;
-    uint32_t max_redir; /* 可重定向条目数 - 1，即最高 pin 下标 */
+    uint32_t max_redir; /* 最大重定向下标 */
     uint8_t id;
 } ioapic_dev_t;
 
@@ -51,7 +51,7 @@ static void ioapic_write(ioapic_dev_t *dev, uint32_t reg, uint32_t value)
 static void ioapic_write_rte(ioapic_dev_t *dev, uint32_t pin, uint32_t low, uint32_t high)
 {
     uint32_t reg = IOAPIC_REDTBL_BASE + pin * 2u;
-    /* 先写高 32 位再写低 32 位（写低位可能立刻解除 mask） */
+    /* 先写高位再写低位 */
     ioapic_write(dev, reg + 1u, high);
     ioapic_write(dev, reg, low);
 }
@@ -79,7 +79,7 @@ static void isa_irq_to_gsi(uint8_t isa_irq, uint32_t *gsi_out, uint32_t *rte_fla
     const madt_info_t *madt = acpi_madt();
     uint32_t i;
     uint32_t gsi = (uint32_t)isa_irq;
-    uint32_t rte = 0; /* ISA 默认：edge + active high */
+    uint32_t rte = 0; /* ISA 默认边沿触发高电平 */
 
     if (madt != NULL)
     {
@@ -93,23 +93,23 @@ static void isa_irq_to_gsi(uint8_t isa_irq, uint32_t *gsi_out, uint32_t *rte_fla
 
             switch (iso->flags & ACPI_MADT_POLARITY_MASK)
             {
-            case 0x1: /* active high */
+            case 0x1: /* 高电平有效 */
                 break;
-            case 0x3: /* active low */
+            case 0x3: /* 低电平有效 */
                 rte |= IOAPIC_REDTBL_ACTIVE_LOW;
                 break;
-            default: /* conforming：ISA → high */
+            default: /* 默认高电平 */
                 break;
             }
 
             switch (iso->flags & ACPI_MADT_TRIGGER_MASK)
             {
-            case 0x4: /* edge */
+            case 0x4: /* 边沿触发 */
                 break;
-            case 0xC: /* level */
+            case 0xC: /* 电平触发 */
                 rte |= IOAPIC_REDTBL_LEVEL;
                 break;
-            default: /* conforming：ISA → edge */
+            default: /* 默认边沿触发 */
                 break;
             }
             break;
@@ -139,7 +139,7 @@ void ioapic_route_isa_irq(uint8_t isa_irq, uint8_t vector, uint32_t dest_lapic_i
             __asm__ volatile("hlt");
     }
 
-    /* Fixed delivery、物理模式、unmasked */
+    /* 固定投递，物理模式，不屏蔽 */
     low = (uint32_t)vector | flags;
     high = dest_lapic_id << 24;
 

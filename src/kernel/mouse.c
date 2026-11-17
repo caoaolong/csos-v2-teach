@@ -8,12 +8,7 @@
 #include <kernel/timer.h>
 #include <kernel/vdev.h>
 
-/* PS/2 鼠标：8042 第二端口（AUX），IRQ12，标准 3 字节包。
- * 初始化走 0xD4 写 AUX 命令；数据包由 handler_mouse 组装，解码后按
- * Linux 语义展开为 input_event_t（REL_X/REL_Y + BTN_* 变化 + SYN_REPORT）；
- * 用户态经 /dev/mouse0 读 input_event_t（读空回 AGAIN，靠 syscall 层 yield 重试）。
- * v1 约束：标准 3 字节协议（无滚轮）；溢出位钳制到 ±255；单读端假设（无 waiter，
- * 多任务同时读会分食事件——compositor 独占场景够用，focus 路由以后再做）。 */
+/* PS/2 鼠标：标准 3 字节包，转 input 事件 */
 
 #define AUX_DATA 0x60
 #define AUX_STATUS 0x64
@@ -21,7 +16,7 @@
 
 #define AUX_STAT_OBF (1u << 0)
 #define AUX_STAT_IBF (1u << 1)
-#define AUX_STAT_MOUSE (1u << 5) /* OBF 数据来源：1=鼠标，0=键盘 */
+#define AUX_STAT_MOUSE (1u << 5) /* OBF 来源，1 为鼠标 */
 
 #define AUX_CMD_ENABLE_PORT2 0xA8
 #define AUX_CMD_WRITE_AUX 0xD4
@@ -42,13 +37,13 @@ static uint32_t g_mouse_head;
 static uint32_t g_mouse_tail;
 static uint32_t g_mouse_count;
 static spinlock_t g_mouse_lock = SPINLOCK_INIT;
-static uint32_t g_mouse_buttons; /* 上一组包的按键电平（bit0 左 bit1 右 bit2 中） */
+static uint32_t g_mouse_buttons; /* 上一组按键电平 */
 
-/* 包组装状态（中断上下文推进）：idx=已收字节数 */
+/* 包组装状态，已收字节数 */
 static uint8_t g_pkt[3];
 static uint32_t g_pkt_idx;
 
-static int mouse_available; /* 初始化成功标志；失败则只有键盘能用 */
+static int mouse_available; /* 初始化成功标志 */
 
 static void mouse_wait_ibf_clear()
 {
@@ -57,7 +52,7 @@ static void mouse_wait_ibf_clear()
     while ((inb(AUX_STATUS) & AUX_STAT_IBF) != 0)
     {
         if (--spins == 0)
-            return; /* 不 halt：鼠标缺席不能连累键盘 */
+            return; /* 鼠标缺席不连累键盘 */
     }
 }
 
@@ -82,7 +77,7 @@ static void mouse_write_aux(uint8_t cmd)
     outb(AUX_DATA, cmd);
 }
 
-/* 发 AUX 命令并等 ACK（0xFE 则重发一次）；成功返回 0 */
+/* 发命令等 ACK，成功返回 0 */
 static int mouse_cmd_ack(uint8_t cmd)
 {
     int r;
@@ -112,7 +107,7 @@ void handler_mouse(exception_frame_t *frame)
     }
     if ((status & AUX_STAT_MOUSE) == 0)
     {
-        /* 不是鼠标字节（键盘串门）：别消费，留给 IRQ1 处理 */
+        /* 非鼠标字节留给键盘处理 */
         lapic_eoi();
         return;
     }
@@ -121,7 +116,7 @@ void handler_mouse(exception_frame_t *frame)
     if (g_pkt_idx == 0 && (b & 0x08) == 0)
     {
         lapic_eoi();
-        return; /* 首字节 bit3 恒 1，否则失步丢弃 */
+        return; /* 首字节失步丢弃 */
     }
     g_pkt[g_pkt_idx++] = b;
     if (g_pkt_idx < 3)
@@ -139,19 +134,18 @@ void handler_mouse(exception_frame_t *frame)
         uint64_t now;
         uint64_t flags;
 
-        /* 溢出钳制到 ±255 保方向 */
+        /* 溢出钳制保方向 */
         if (g_pkt[0] & 0x40)
             dx = dx >= 0 ? 255 : -255;
         if (g_pkt[0] & 0x80)
             dy = dy >= 0 ? 255 : -255;
-        dy = -dy; /* PS/2 上为正，屏坐标下为正 */
+        dy = -dy; /* 翻转 Y 方向 */
 
         now = uptime_ms();
         flags = spin_lock_irqsave(&g_mouse_lock);
         changed = buttons ^ g_mouse_buttons;
         g_mouse_buttons = buttons;
-        /* 中断上下文直接入队：REL（非零才发）+ 变化的 BTN_* + SYN 分组。
-         * 满则丢弃本组剩余事件（compositor 独占读，正常到不了）。 */
+        /* 中断上下文直接入队，满则丢弃 */
 #define MOUSE_PUSH(t, c, v)                                     \
     do                                                          \
     {                                                           \
@@ -191,7 +185,7 @@ void init_mouse()
     uint8_t cfg;
     int r;
 
-    /* 开第二端口；键盘（第一端口）保持 kbd 初始化的状态不动 */
+    /* 开第二端口 */
     mouse_wait_ibf_clear();
     outb(AUX_CMD, AUX_CMD_ENABLE_PORT2);
 
@@ -204,13 +198,13 @@ void init_mouse()
         return;
     }
     cfg = (uint8_t)r;
-    cfg |= (1u << 1); /* 第二端口中断开 */
+    cfg |= (1u << 1); /* 开第二端口中断 */
     mouse_wait_ibf_clear();
     outb(AUX_CMD, AUX_CMD_WRITE_CFG);
     mouse_wait_ibf_clear();
     outb(AUX_DATA, cfg);
 
-    /* 复位：FA, AA, 00 */
+    /* 复位应答为 FA AA 00 */
     mouse_write_aux(MOUSE_CMD_RESET);
     if (mouse_read_byte() != AUX_REPLY_ACK ||
         mouse_read_byte() != 0xAA || mouse_read_byte() != 0x00)
@@ -264,7 +258,7 @@ static int64_t mouse_write(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t
     (void)f;
     (void)buf;
     (void)len;
-    return VFS_ERR_NOTSUP; /* 纯输入设备，不可写 */
+    return VFS_ERR_NOTSUP; /* 纯输入设备不可写 */
 }
 
 static const vdev_char_ops_t g_mouse_ops = {

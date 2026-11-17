@@ -21,7 +21,7 @@ smp_trampoline_start:
     mov     %ax, %fs
     mov     %ax, %gs
 
-    /* GDTR 在 trampoline 页内（含 32 位与 64 位段） */
+    /* GDTR 在 trampoline 页内 */
     lgdtl   TRAMP_BASE + (tramp_gdtr - smp_trampoline_start)
 
     /* 进保护模式 */
@@ -45,7 +45,7 @@ tramp_pm32:
     or      $(1 << 5), %eax
     mov     %eax, %cr4
 
-    /* CR3 = BSP 页表（低 32 位；QEMU 下 PML4 在 4GB 内） */
+    /* CR3 取 BSP 页表（低 32 位） */
     mov     TRAMP_BASE + (tramp_bootinfo - smp_trampoline_start) + 8, %eax
     mov     %eax, %cr3
 
@@ -55,7 +55,7 @@ tramp_pm32:
     or      $(1 << 8), %eax
     wrmsr
 
-    /* 开分页 → IA-32e 兼容模式 */
+    /* 开分页进 IA-32e 兼容模式 */
     mov     %cr0, %eax
     or      $(1 << 31), %eax
     mov     %eax, %cr0
@@ -76,7 +76,7 @@ tramp_lm64:
     mov     24(%rbx), %rax          /* entry = ap_main */
     jmp     *%rax
 
-/* ---- bootinfo：由 BSP 在拷贝后填写 ---- */
+/* bootinfo：BSP 拷贝后填写 */
 .align 8
 tramp_bootinfo:
     .long   0       /* 0: started */

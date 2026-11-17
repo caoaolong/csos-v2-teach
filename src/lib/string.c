@@ -18,7 +18,7 @@ char *strcpy(char *dst, const char *src)
     return dst;
 }
 
-/* 标准语义：至多写 n 字节，不足补 '\0'；src（含 '\0'）长度 ≥ n 时不封口 */
+/* 标准语义：至多写 n 字节，不足补 '\0'；长度 ≥ n 时不封口 */
 char *strncpy(char *dst, const char *src, unsigned long n)
 {
     unsigned long i = 0;

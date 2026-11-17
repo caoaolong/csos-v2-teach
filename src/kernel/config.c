@@ -6,7 +6,7 @@
 
 boot_config_t g_boot_config;
 
-/* 与 EfiBoot BOOT_CONFIG_MAX_SIZE 一致 */
+/* 与启动配置大小上限一致 */
 #define CFG_MAX_SIZE 16384ULL
 #define CFG_IDENTITY_LIMIT (512ULL * 1024 * 1024)
 
@@ -15,7 +15,7 @@ static int cfg_is_ws(char c)
     return c == ' ' || c == '\t';
 }
 
-/* 拷贝 token（[s, s+n)），保证 NUL 结尾，超长截断 */
+/* 拷贝 token，保证 NUL 结尾 */
 static void cfg_copy(char *dst, uint32_t dst_size, const char *s, uint32_t n)
 {
     uint32_t i;
@@ -49,7 +49,7 @@ static uint32_t cfg_tok_len(const char *s, const char *end)
     return n;
 }
 
-/* 解析 "mount <dev> <mp> <fstype>" 的参数区 */
+/* 解析 mount 行参数 */
 static void cfg_parse_mount(const char *s, const char *end)
 {
     const char *p = s;
@@ -60,7 +60,7 @@ static void cfg_parse_mount(const char *s, const char *end)
         return;
     m = &g_boot_config.mounts[g_boot_config.mount_count];
 
-    /* dev */
+    /* 设备名 */
     while (p < end && cfg_is_ws(*p))
         p++;
     n = cfg_tok_len(p, end);
@@ -69,7 +69,7 @@ static void cfg_parse_mount(const char *s, const char *end)
     cfg_copy(m->dev, sizeof(m->dev), p, n);
     p += n;
 
-    /* mountpoint */
+    /* 挂载点 */
     while (p < end && cfg_is_ws(*p))
         p++;
     n = cfg_tok_len(p, end);
@@ -78,7 +78,7 @@ static void cfg_parse_mount(const char *s, const char *end)
     cfg_copy(m->mountpoint, sizeof(m->mountpoint), p, n);
     p += n;
 
-    /* fstype */
+    /* 文件系统类型 */
     while (p < end && cfg_is_ws(*p))
         p++;
     n = cfg_tok_len(p, end);
@@ -96,7 +96,7 @@ static void cfg_parse_mount(const char *s, const char *end)
     g_boot_config.mount_count++;
 }
 
-/* 解析 "key=value"，s..end 为去首尾空白后的一行 */
+/* 解析 key=value 行 */
 static void cfg_parse_kv(const char *s, const char *end)
 {
     const char *eq = s;
@@ -156,7 +156,7 @@ static void cfg_parse_kv(const char *s, const char *end)
         }
         g_boot_config.timeout = v;
     }
-    /* 未知 key：忽略（向前兼容） */
+    /* 未知 key 忽略 */
 }
 
 void parse_apply_boot_config(boot_info_t *boot)
@@ -185,7 +185,7 @@ void parse_apply_boot_config(boot_info_t *boot)
             if (ls != end && *ls != '\n')
                 continue;
 
-            /* 行 [line, ls)，去掉尾部 \r */
+            /* 去掉行尾回车 */
             le = ls;
             if (le > line && le[-1] == '\r')
                 le--;
@@ -214,21 +214,11 @@ void parse_apply_boot_config(boot_info_t *boot)
         g_boot_config.present = 1;
     }
 
-    /*
-     * 应用：目前 pmm 只有 bitmap、disk 只有 ata-pio，
-     * buddy/slab、ata-dma 实现后在此按 g_boot_config 选择。
-     * 传 NULL 即恢复各自的默认后端；未知值同样回退默认，
-     * 由 boot_config_summary() 统一告警。
-     */
+    /* 应用：未知后端回退默认 */
     pmm_allocator_set(NULL);
     ata_set(NULL);
 
-    /*
-     * debug=serial（默认，含无配置时）才初始化串口；
-     * 其他值（如 debug=none）保持静默启动。
-     * 此前 serial_init() 是 kernel_main 第一件事，
-     * 挪到此处时序等价。
-     */
+    /* 串口输出按 debug 配置决定 */
     if (kernel_strcmp(g_boot_config.debug, "serial") == 0)
         serial_init();
 }

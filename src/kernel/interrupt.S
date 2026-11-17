@@ -28,7 +28,7 @@ interrupt_handler_\func:
   push %r15
 
   cld
-  /* 根据x86‑64 System V ABI：第一个参数存储在RDI寄存器中 */
+  /* 首参经 RDI 传入 */
   mov %rsp, %rdi
   call handler_\func
 

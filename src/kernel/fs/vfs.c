@@ -11,7 +11,7 @@ static char g_cwd[VFS_PATH_MAX];
 static spinlock_t g_vfs_lock = SPINLOCK_INIT;
 static int g_vfs_ready;
 
-/* 规范化绝对路径：合并重复 '/'，处理 '.' 与 '..'，根为 "/" */
+/* 规范化绝对路径 */
 static int vfs_normalize(const char *src, char *dst, uint32_t dst_size)
 {
     uint32_t i = 0;
@@ -35,7 +35,7 @@ static int vfs_normalize(const char *src, char *dst, uint32_t dst_size)
             continue;
         if (len == 2 && src[start] == '.' && src[start + 1] == '.')
         {
-            /* 弹出最后一级；根目录上的 ".." 停在根 */
+            /* 弹出最后一级 */
             while (j > 1 && dst[j - 1] != '/')
                 j--;
             if (j > 1)
@@ -54,7 +54,7 @@ static int vfs_normalize(const char *src, char *dst, uint32_t dst_size)
     return VFS_OK;
 }
 
-/* 相对路径基于当前工作目录拼接后再规范化 */
+/* 相对路径拼接工作目录后规范化 */
 static int vfs_abspath(const char *path, char *out, uint32_t out_size)
 {
     char joined[VFS_PATH_MAX];
@@ -82,7 +82,7 @@ static int vfs_abspath(const char *path, char *out, uint32_t out_size)
     return vfs_normalize(joined, out, out_size);
 }
 
-/* 最长前缀匹配：返回挂载点，否则 NULL；rel 输出去掉前缀后的相对路径 */
+/* 最长前缀匹配挂载点 */
 static vfs_mount_t *vfs_resolve(const char *path, const char **rel_out)
 {
     vfs_mount_t *best = NULL;
@@ -99,7 +99,7 @@ static vfs_mount_t *vfs_resolve(const char *path, const char **rel_out)
         ml = kernel_strlen(mp);
         if (ml == 1)
         {
-            /* "/" 兜底所有绝对路径 */
+            /* 根挂载点兜底 */
             if (best == NULL)
             {
                 best = &g_mounts[i];
@@ -109,7 +109,7 @@ static vfs_mount_t *vfs_resolve(const char *path, const char **rel_out)
         }
         if (path[0] != mp[0])
             continue;
-        /* 前缀相等且边界为 '/' 或字符串结束 */
+        /* 前缀须按目录边界匹配 */
         if (kernel_strncmp(mp, path, ml) != 0)
             continue;
         if (path[ml] != '\0' && path[ml] != '/')
@@ -123,7 +123,7 @@ static vfs_mount_t *vfs_resolve(const char *path, const char **rel_out)
     if (!best)
         return NULL;
     if (best_len == 1)
-        *rel_out = path + 1; /* "/" -> rel 为 path 去首 '/' */
+        *rel_out = path + 1; /* 根下相对路径去首斜杠 */
     else
         *rel_out = path[best_len] == '/' ? path + best_len + 1 : path + best_len;
     return best;
@@ -249,7 +249,7 @@ int vfs_mount(const char *fs_name, const char *mountpoint, const char *dev)
         spin_unlock_irqrestore(&g_vfs_lock, flags);
         return VFS_ERR_NOSPC;
     }
-    slot->used = 1; /* 先占位，mount 回调失败再回收 */
+    slot->used = 1; /* 先占位，失败再回收 */
     slot->drv = drv;
     slot->priv = NULL;
     kernel_strncpy(slot->mountpoint, norm, sizeof(slot->mountpoint));
@@ -295,9 +295,9 @@ int vfs_unmount(const char *mountpoint)
     if (g_mounts[i].open_count > 0)
     {
         spin_unlock_irqrestore(&g_vfs_lock, flags);
-        return VFS_ERR_BUSY; /* 仍有句柄，禁止释放 superblock */
+        return VFS_ERR_BUSY; /* 仍有句柄禁止卸载 */
     }
-    g_mounts[i].used = 0; /* 摘除：之后 vfs_locate 无法再找到它，不会有新句柄 */
+    g_mounts[i].used = 0; /* 先摘除挂载点 */
     spin_unlock_irqrestore(&g_vfs_lock, flags);
 
     if (g_mounts[i].drv->unmount)
@@ -446,7 +446,7 @@ int vfs_mkdir(const char *path)
     if (rel[0] == '\0')
     {
         vfs_unpin(m);
-        return VFS_ERR_EXIST; /* 挂载点本身已存在 */
+        return VFS_ERR_EXIST; /* 挂载点已存在 */
     }
     if (!m->drv->mkdir)
     {
@@ -473,7 +473,7 @@ int vfs_rmdir(const char *path)
     if (rel[0] == '\0')
     {
         vfs_unpin(m);
-        return VFS_ERR_BUSY; /* 挂载点根不可删除，需先 unmount */
+        return VFS_ERR_BUSY; /* 挂载点根不可删除 */
     }
     if (!m->drv->rmdir)
     {
@@ -500,12 +500,12 @@ int vfs_mkfifo(const char *path)
     if (rel[0] == '\0')
     {
         vfs_unpin(m);
-        return VFS_ERR_EXIST; /* 挂载点本身已存在 */
+        return VFS_ERR_EXIST; /* 挂载点已存在 */
     }
     if (!m->drv->mkfifo)
     {
         vfs_unpin(m);
-        return VFS_ERR_NOTSUP; /* 如 fat32/ext4：盘上格式无 fifo */
+        return VFS_ERR_NOTSUP; /* 磁盘格式无命名管道 */
     }
     rc = m->drv->mkfifo(m, rel);
     vfs_unpin(m);

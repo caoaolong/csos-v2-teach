@@ -11,9 +11,8 @@
 #define COMP_BG_RGB 0x000F0F12u
 #define COMP_FG_RGB 0x00E8E8E8u
 
-/* v1 单客户端：窗口即全屏。输入只归 compositor，命中窗口后换算坐标下发；
- * 客户端像素归客户端，compositor 只画光标（已知局限：cursor erase 按
- * 底色重填，会吃掉光标下的客户端像素；根治需保存光标下像素，后续再做）。 */
+/* v1 单客户端：窗口即全屏，compositor 独占输入并只画光标 */
+/* 客户端像素归客户端；光标擦除按底色重填，会盖掉光标下像素 */
 
 static uint32_t *g_px;
 static uint32_t g_stride;
@@ -32,7 +31,7 @@ static int g_cmdfd = -1; /* C→S：读 */
 static int g_evtfd = -1; /* S→C：写 */
 static comp_reader_t g_cmdr;
 
-/* 用户栈仅一页：大缓冲一律放 bss，main 栈帧只留标量 */
+/* 大缓冲一律放 bss（用户栈仅一页），main 栈帧只留标量 */
 static input_event_t g_mevs[32];
 static input_event_t g_kevs[32];
 static uint8_t g_payload[COMP_MAX_PAYLOAD];
@@ -88,7 +87,7 @@ static uint32_t clamp_u32(int v, uint32_t max)
     return (uint32_t)v;
 }
 
-/* 窗口内裁剪画实心矩形（坐标已为屏坐标） */
+/* 窗口内裁剪画实心矩形 */
 static void comp_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
 {
     uint32_t i;
@@ -113,7 +112,7 @@ static void comp_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t c
     }
 }
 
-/* 在窗口内画一个字形（屏坐标左上角，越界像素丢弃；按 g_scale 放大） */
+/* 在窗口内画一个字形（按 g_scale 放大） */
 static void comp_glyph(uint32_t x, uint32_t y, char ch, uint32_t fg, uint32_t bg)
 {
     const uint8_t *g = comp_font_glyph(ch);
@@ -151,7 +150,7 @@ static void comp_glyph(uint32_t x, uint32_t y, char ch, uint32_t fg, uint32_t bg
     }
 }
 
-/* 执行客户端命令，payload 均为窗口相对坐标 */
+/* 执行客户端命令 */
 static void exec_fill(const uint8_t *p)
 {
     uint32_t x = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -193,14 +192,14 @@ static void exec_text(const uint8_t *p, unsigned long len)
     cursor_paint(g_cx, g_cy, 0); /* 文本盖住光标时重画 */
 }
 
-/* 转发一批输入事件给客户端（阻塞写完；失败返回 -1） */
+/* 转发一批输入事件给客户端 */
 static int forward_events(const input_event_t *evs, long nev)
 {
     return (int)comp_send(g_evtfd, COMP_MSG_EVTS, evs,
                           (unsigned long)(nev * (long)sizeof(input_event_t)));
 }
 
-/* 与客户端握手：建 fifo → 开两端（阻塞等对端）→ 下发窗口 */
+/* 与客户端握手：建 fifo、开两端、下发窗口 */
 static int ipc_handshake(void)
 {
     comp_win_t w;
@@ -222,7 +221,7 @@ static int ipc_handshake(void)
         printf("compositor: mkfifo evt failed\n");
         return -1;
     }
-    /* 先开 cmd 读端，再开 evt 写端；客户端以同样顺序开写/读端，对称等待 */
+    /* 先开 cmd 读端再开 evt 写端（与客户端对称等待） */
     g_cmdfd = (int)open(COMP_CMD_FIFO, O_RDONLY | O_NONBLOCK);
     if (g_cmdfd < 0)
     {
@@ -299,7 +298,7 @@ int main()
     g_width = info.width;
     g_height = info.height;
     g_phys_w_mm = info.phys_w_mm;
-    /* DPI 定字号：dpi = 25.4*px/mm，>140 用 2x；无物理尺寸时按高度保底。 */
+    /* DPI 定字号：超 140 用 2x；无物理尺寸时按高度保底 */
     g_scale = 1;
     if (g_phys_w_mm != 0 && g_width != 0)
     {
@@ -356,7 +355,7 @@ int main()
         uint8_t *payload = g_payload;
         comp_hdr_t *h = &g_cmdh;
 
-        /* --- 鼠标：SYN 分组移动光标，整批转发客户端 --- */
+        /* 鼠标：SYN 分组移动光标，整批转发客户端 */
         errno = 0;
         r = read(mfd, mevs, sizeof(g_mevs));
         if (r > 0)
@@ -417,7 +416,7 @@ int main()
             }
         }
 
-        /* --- 键盘：只响应按下做日志，其余原样转发（回显归客户端） --- */
+        /* 键盘：按下打日志，其余原样转发 */
         errno = 0;
         kr = read(kfd, kevs, sizeof(g_kevs));
         if (kr > 0)
@@ -448,7 +447,7 @@ int main()
             }
         }
 
-        /* --- 客户端命令：耗尽并执行 --- */
+        /* 客户端命令：耗尽并执行 */
         if (g_cmdfd >= 0)
         {
             for (;;)

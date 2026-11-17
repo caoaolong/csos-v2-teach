@@ -10,7 +10,7 @@ typedef struct devfs_node
 {
     char name[VFS_NAME_MAX];
     uint32_t is_dir;
-    uint32_t refs; /* 打开句柄 + 目录游标；>0 时禁止 detach */
+    uint32_t refs; /* 引用计数，打开时禁止摘除 */
     vdev_t *dev;
     struct devfs_node *parent;
     struct devfs_node *child;
@@ -39,7 +39,7 @@ static devfs_node_t *devfs_child_find(devfs_node_t *dir, const char *comp, uint3
     return NULL;
 }
 
-/* 按名字升序插入，保证节点顺序稳定 */
+/* 按名字升序插入 */
 static void devfs_child_link(devfs_node_t *dir, devfs_node_t *node)
 {
     devfs_node_t **pp = &dir->child;
@@ -124,7 +124,7 @@ static int devfs_attach_locked(devfs_sb_t *sb, vdev_t *dev)
     }
 }
 
-/* 调用者已持锁：按设备名查找节点，找不到返回 NULL */
+/* 按设备名查找节点，调用者已持锁 */
 static devfs_node_t *devfs_find_locked(devfs_sb_t *sb, const char *name)
 {
     const char *p = name;
@@ -154,7 +154,7 @@ static devfs_node_t *devfs_find_locked(devfs_sb_t *sb, const char *name)
     return cur;
 }
 
-/* 调用者已持锁：摘除设备节点，并向上清理变空的目录 */
+/* 摘除设备节点并清理空目录，调用者已持锁 */
 static int devfs_detach_locked(devfs_sb_t *sb, vdev_t *dev)
 {
     devfs_node_t *n = devfs_find_locked(sb, dev->name);
@@ -163,7 +163,7 @@ static int devfs_detach_locked(devfs_sb_t *sb, vdev_t *dev)
     if (!n || n->dev != dev)
         return VFS_ERR_NOENT;
     if (n->refs > 0)
-        return VFS_ERR_BUSY; /* 仍有 open 句柄或目录游标引用 */
+        return VFS_ERR_BUSY; /* 仍有引用 */
 
     parent = n->parent;
     devfs_child_unlink(n);
@@ -224,7 +224,7 @@ static int devfs_open(vfs_mount_t *m, const char *rel, int flags, vfs_file_t *f)
     if (!sb || !rel || !f)
         return VFS_ERR_INVAL;
     if (flags & (VFS_O_CREAT | VFS_O_TRUNC))
-        return VFS_ERR_NOTSUP; /* 设备节点只来自 vdev_register，不可新建/截断 */
+        return VFS_ERR_NOTSUP; /* 设备节点不可新建或截断 */
     want_dir = (flags & VFS_O_DIRECTORY) != 0;
 
     irq = spin_lock_irqsave(&sb->lock);
@@ -259,7 +259,7 @@ static int devfs_open(vfs_mount_t *m, const char *rel, int flags, vfs_file_t *f)
         spin_unlock_irqrestore(&sb->lock, irq);
         return VFS_ERR_NOENT;
     }
-    n->refs++; /* 钉住节点：detach 见 refs>0 会返回 BUSY，节点不会被释放 */
+    n->refs++; /* 引用钉住节点 */
     f->priv = n;
     f->is_dir = 0;
     f->size = 0;
@@ -320,7 +320,7 @@ static int devfs_close(vfs_file_t *f)
     if (!n)
         return VFS_OK;
     sb = (devfs_sb_t *)f->mnt->priv;
-    dev = n->dev; /* 节点被 refs 钉住，detach 无法释放它，dev 指针稳定 */
+    dev = n->dev; /* 节点被引用钉住，指针稳定 */
     if (dev && dev->type == VDEV_CHAR && dev->ops && dev->ops->close)
         dev->ops->close(dev, f);
     else if (dev && dev->type == VDEV_BLOCK && dev->bops && dev->bops->close)
@@ -350,11 +350,11 @@ static int64_t devfs_block_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t 
     if (len == 0)
         return 0;
     if (f->pos >= size)
-        return 0; /* EOF */
+        return 0; /* 文件结束 */
     if (len > size - f->pos)
         len = size - f->pos;
 
-    /* 头部非对齐部分：读一整块再拷贝 */
+    /* 头部非对齐部分先读整块 */
     if (f->pos % bs)
     {
         uint64_t lba = f->pos / bs;
@@ -383,12 +383,12 @@ static int64_t devfs_block_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t 
             return (int64_t)done;
     }
 
-    /* 中间对齐部分：直接整块传输 */
+    /* 中间对齐部分直接传输 */
     if (len >= bs)
     {
         uint64_t lba = f->pos / bs;
         uint32_t n = (uint32_t)(len / bs);
-        /* 单次 ATA 调用块数过大时拆分，避免 count 溢出 */
+        /* 大请求拆分传输 */
         while (n > 0)
         {
             uint32_t cur = n > 128 ? 128 : n;
@@ -406,7 +406,7 @@ static int64_t devfs_block_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t 
             return (int64_t)done;
     }
 
-    /* 尾部不足一块：读一整块再拷贝 */
+    /* 尾部不足一块读整块 */
     if (len > 0)
     {
         uint64_t lba = f->pos / bs;
@@ -447,7 +447,7 @@ static int64_t devfs_block_write(vdev_t *dev, vfs_file_t *f, const void *buf, ui
     if (len > size - f->pos)
         len = size - f->pos;
 
-    /* 头部非对齐：读-改-写 */
+    /* 头部非对齐读改写 */
     if (f->pos % bs)
     {
         uint64_t lba = f->pos / bs;
@@ -502,7 +502,7 @@ static int64_t devfs_block_write(vdev_t *dev, vfs_file_t *f, const void *buf, ui
             goto out;
     }
 
-    /* 尾部不足一块：读-改-写 */
+    /* 尾部不足一块读改写 */
     if (len > 0)
     {
         uint64_t lba = f->pos / bs;
@@ -584,7 +584,7 @@ static int64_t devfs_seek(vfs_file_t *f, int64_t off, int whence)
     if (!dev)
         return VFS_ERR_NOENT;
     if (dev->type != VDEV_BLOCK)
-        return VFS_ERR_NOTSUP; /* 字符设备不可 seek */
+        return VFS_ERR_NOTSUP; /* 字符设备不可定位 */
     size = dev->nblocks * dev->block_size;
     if (whence == VFS_SEEK_SET)
         base = off;
@@ -618,7 +618,7 @@ static int devfs_stat(vfs_mount_t *m, const char *rel, uint64_t *size_out, uint3
         if (!n->is_dir && n->dev && n->dev->type == VDEV_BLOCK)
             *size_out = n->dev->nblocks * n->dev->block_size;
         else
-            *size_out = 0; /* 字符设备无固定大小 */
+            *size_out = 0; /* 字符设备大小为 0 */
     }
     if (is_dir_out)
         *is_dir_out = n->is_dir;
@@ -630,7 +630,7 @@ static int devfs_mkdir(vfs_mount_t *m, const char *rel)
 {
     (void)m;
     (void)rel;
-    return VFS_ERR_NOTSUP; /* 目录由设备名自动派生，不可手动创建 */
+    return VFS_ERR_NOTSUP; /* 目录自动派生，不可手动创建 */
 }
 
 static int devfs_rmdir(vfs_mount_t *m, const char *rel)
@@ -667,7 +667,7 @@ static int devfs_opendir(vfs_mount_t *m, const char *rel, vfs_dir_t *d)
     return VFS_OK;
 }
 
-/* 游标语义与 ramfs 一致：pos 为最近返回的子项并被 refs 钉住 */
+/* 游标指向最近返回的子项 */
 static int devfs_readdir(vfs_dir_t *d, vfs_dirent_t *out)
 {
     devfs_sb_t *sb = (devfs_sb_t *)d->mnt->priv;

@@ -21,9 +21,8 @@ typedef struct {
   UINT8     Reserved0;
   UINT32    GopMode;
   UINT16    CurrentGopModeDesc[MAXSIZE_GOP_MODE_DESC];
-  /* Appended at the end: whether the user explicitly picked a mode in
-   * Setup. Old NVRAM lacks this byte and reads back as 0 ("not set"),
-   * in which case EfiBoot keeps the firmware's current mode. */
+  /* Set when the user picked a mode in Setup. */
+  /* Old NVRAM reads 0, EfiBoot keeps the firmware mode. */
   UINT8     GopModeSet;
 } CSOS_SETUP_CONFIGURATION;
 

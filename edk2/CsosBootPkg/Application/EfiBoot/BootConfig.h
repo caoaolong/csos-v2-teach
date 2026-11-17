@@ -4,26 +4,15 @@
 #include <Uefi.h>
 #include <Protocol/SimpleFileSystem.h>
 
-/**
-  Load csos.cfg from the ESP root and keep it for the kernel.
-
-  The file content is copied into EfiLoaderData pages (never reclaimed by
-  the kernel's PMM, which only frees Conventional/BootServices memory),
-  so the kernel can parse it after ExitBootServices. Success is quiet;
-  the kernel prints the effective config (boot_config_summary).
-
-  Missing file is NOT fatal: *ConfigAddr is set to 0, *ConfigSize to 0,
-  and EFI_NOT_FOUND is returned; the caller continues with defaults.
-
-  @param[in]  Root        Opened ESP volume root.
-  @param[in]  FileName    Config path (e.g. L"\\csos.cfg").
-  @param[out] ConfigAddr  Physical address of the kept copy (0 if absent).
-  @param[out] ConfigSize  Bytes in the kept copy (0 if absent).
-
-  @retval EFI_SUCCESS   Loaded, printed, and kept.
-  @retval EFI_NOT_FOUND File does not exist.
-  @retval Others        Read/alloc failure.
-**/
+/* Load csos.cfg from the ESP root and keep it for the kernel. */
+/* Missing file is not fatal, the caller continues with defaults. */
+/* @param Root Opened ESP volume root. */
+/* @param FileName Config path, e.g. L"\\csos.cfg". */
+/* @param ConfigAddr Kept copy address, 0 if absent. */
+/* @param ConfigSize Kept copy size, 0 if absent. */
+/* @retval EFI_SUCCESS Loaded and kept. */
+/* @retval EFI_NOT_FOUND File missing. */
+/* @retval Others Read or alloc failure. */
 EFI_STATUS
 LoadBootConfig(
     IN EFI_FILE_PROTOCOL *Root,

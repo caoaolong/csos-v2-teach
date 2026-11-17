@@ -9,7 +9,7 @@ void set_interrupt_gate(int vector, uint64_t offset, uint16_t selector, uint16_t
     idt_entry_t *entry = &idt[vector];
     entry->offset_low = (uint16_t)(offset & 0xFFFF);
     entry->selector = selector;
-    /* attr 低 8 位：IST；高 8 位：P|DPL|type */
+    /* attr 低 8 位为 IST，高 8 位为属性 */
     entry->ist = (uint8_t)(attr & 0x07);
     entry->type_attr = (uint8_t)((attr >> 8) & 0xFF);
     entry->offset_mid = (uint16_t)((offset >> 16) & 0xFFFF);
@@ -71,9 +71,9 @@ void init_idt()
     install_interrupt_handler(19, interrupt_handler_simd);
     install_interrupt_handler(20, interrupt_handler_virtual);
     install_interrupt_handler(21, interrupt_handler_control);
-    install_interrupt_handler(32, interrupt_handler_timer); /* IRQ0 / PIT */
+    install_interrupt_handler(32, interrupt_handler_timer); /* IRQ0 定时器 */
     install_interrupt_handler(33, interrupt_handler_kbd);
-    install_interrupt_handler(44, interrupt_handler_mouse); /* IRQ12 / PS/2 mouse */
+    install_interrupt_handler(44, interrupt_handler_mouse); /* IRQ12 鼠标 */
     install_interrupt_handler(34, interrupt_handler_yield);
     install_interrupt_handler(255, interrupt_handler_spurious);
 

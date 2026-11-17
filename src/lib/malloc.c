@@ -2,9 +2,8 @@
 #include "unistd.h"
 #include "string.h"
 
-/* K&R 空闲链表：块大小以 Header 为单位；sbrk 按字节申请，free 合并相邻块，
- * 堆顶空闲块整块 unlink 并收缩 brk，把物理页归还内核。单任务无锁（fork 后
- * 父子各持一份拷贝，无共享）。 */
+/* K&R 空闲链表堆分配器：sbrk 按字节申请，free 合并相邻块 */
+/* 堆顶空闲块整块归还内核（单任务无锁） */
 
 typedef long Align;
 
@@ -21,7 +20,7 @@ typedef union header Header;
 
 static Header base;
 static Header *freep = (Header *)0;
-/* morecore 经 free 挂链时抑制 trim：否则刚要到的内存被立刻归还，malloc 重试即死循环 */
+/* morecore 经 free 挂链时抑制 trim */
 static int no_trim = 0;
 
 #define NALLOC 1024 /* 每次向内核多要的最小单位数（含头） */
@@ -50,7 +49,7 @@ static void trim_heap_top(void)
                 prev->s.next = p->s.next;
                 freep = prev;
             }
-            sbrk((char *)p - top); /* 整块归还；失败则保留已摘链（极少见） */
+            sbrk((char *)p - top); /* 整块归还；失败则保留已摘链 */
             return;
         }
         if (p == freep)

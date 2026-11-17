@@ -40,8 +40,9 @@ typedef struct comp_rect
     uint32_t h;
 } comp_rect_t;
 
-/* 服务端分配的窗口：屏坐标 rect + 字号 scale（>=1，整数放大）。
- * 客户端网格 = w/(8*scale) x h/(16*scale)，TEXT 坐标仍按像素给。 */
+/* 服务端分配的窗口：屏坐标 rect + 字号 scale */
+/* 客户端网格 = w/(8*scale) x h/(16*scale) */
+/* TEXT 坐标仍按像素给 */
 typedef struct comp_win
 {
     uint32_t x;
@@ -51,7 +52,7 @@ typedef struct comp_win
     uint32_t scale;
 } comp_win_t;
 
-/* 阻塞写完 len 字节（对端关闭返回 -1；满管靠 syscall 层阻塞等待） */
+/* 阻塞写完 len 字节 */
 static inline long comp_write_all(int fd, const void *buf, unsigned long len)
 {
     const char *p = (const char *)buf;
@@ -70,7 +71,7 @@ static inline long comp_write_all(int fd, const void *buf, unsigned long len)
     return 0;
 }
 
-/* 阻塞读满 len 字节；读到 EOF（对端全关）返回 -1，无数据则 -1 */
+/* 阻塞读满 len 字节 */
 static inline long comp_read_all(int fd, void *buf, unsigned long len)
 {
     char *p = (char *)buf;
@@ -120,8 +121,8 @@ static inline void comp_reader_init(comp_reader_t *r)
     r->n = 0;
 }
 
-/* 非阻塞拉一帧：1=拿到（hdr_out/payload_out），0=数据不够稍后重试，
- * -1=对端关闭或致命错误（调用方应重连）。payload 超 cap 时整帧丢弃。 */
+/* 非阻塞拉一帧：1=拿到，0=稍后重试，-1=对端关闭 */
+/* payload 超 cap 时整帧丢弃 */
 static inline int comp_reader_feed(comp_reader_t *r, int fd, comp_hdr_t *hdr_out,
                                    uint8_t *payload_out, unsigned long payload_cap)
 {
@@ -131,7 +132,7 @@ static inline int comp_reader_feed(comp_reader_t *r, int fd, comp_hdr_t *hdr_out
     comp_hdr_t h;
     unsigned long total;
 
-    /* 先把本次可读的全吞进来（非阻塞 fd 无数据时返回 -1/EAGAIN） */
+    /* 先把本次可读的全吞进来 */
     errno = 0;
     rr = read(fd, r->buf + r->n, (unsigned long)(COMP_RBUFSZ - r->n));
     if (rr == 0)
@@ -163,7 +164,7 @@ static inline int comp_reader_feed(comp_reader_t *r, int fd, comp_hdr_t *hdr_out
     }
     if (r->n < sizeof(comp_hdr_t))
     {
-        /* 魔数都没凑齐：若缓冲已满还无魔数，直接清空 */
+        /* 缓冲已满还无魔数时直接清空 */
         if (r->n == COMP_RBUFSZ)
             r->n = 0;
         return 0;

@@ -15,8 +15,8 @@
 #define KBD_STATUS 0x64
 #define KBD_CMD 0x64
 
-#define KBD_STAT_OBF (1u << 0) /* output buffer full */
-#define KBD_STAT_IBF (1u << 1) /* input buffer full */
+#define KBD_STAT_OBF (1u << 0) /* 输出缓冲满 */
+#define KBD_STAT_IBF (1u << 1) /* 输入缓冲满 */
 
 #define KBD_CMD_DISABLE_PORT1 0xAD
 #define KBD_CMD_DISABLE_PORT2 0xA7
@@ -24,8 +24,7 @@
 #define KBD_CMD_READ_CFG 0x20
 #define KBD_CMD_WRITE_CFG 0x60
 
-/* 输入事件环：中断写入 input_event_t，vdev read 读出；
- * 静态存储，中断使能前即可使用。每次按键产生 KEY+SYN 两个事件。 */
+/* 输入事件环，中断写入，读出消费 */
 #define KBD_EVENT_BUF 256
 static input_event_t g_kbd_buf[KBD_EVENT_BUF];
 static uint32_t g_kbd_head;
@@ -34,10 +33,10 @@ static uint32_t g_kbd_count;
 static spinlock_t g_kbd_lock = SPINLOCK_INIT;
 static task_t *g_kbd_waiter = NULL;
 
-/* E0 扩展前缀状态（中断上下文推进）：1=下一字节为扩展码 */
+/* E0 扩展前缀状态 */
 static int g_kbd_e0;
 
-/* Set1 make 码 → Linux KEY_*；0 表示忽略 */
+/* Set1 扫描码映射表，0 表示忽略 */
 static const uint16_t g_set1_keycode[128] = {
     [0x01] = INPUT_KEY_ESC,
     [0x02] = INPUT_KEY_1,
@@ -84,7 +83,7 @@ static const uint16_t g_set1_keycode[128] = {
     [0x32] = INPUT_KEY_M,
 };
 
-/* E0 扩展码 → Linux KEY_*（方向键子集） */
+/* E0 扩展码映射表 */
 static uint16_t kbd_e0_keycode(uint8_t sc)
 {
     switch (sc)
@@ -102,7 +101,7 @@ static uint16_t kbd_e0_keycode(uint8_t sc)
     }
 }
 
-/* 中断上下文：入队单个事件，满则丢弃（compositor 独占读，正常到不了） */
+/* 中断上下文入队，满则丢弃 */
 static void kbd_push_event(uint64_t now, uint16_t type, uint16_t code, int32_t value)
 {
     uint64_t flags = spin_lock_irqsave(&g_kbd_lock);
@@ -191,7 +190,7 @@ void handler_kbd(exception_frame_t *frame)
 
     sc = inb(KBD_DATA);
 
-    /* E0 前缀：只记状态，不产生事件 */
+    /* E0 前缀只记状态，不产生事件 */
     if (sc == 0xE0)
     {
         g_kbd_e0 = 1;
@@ -218,10 +217,10 @@ void handler_kbd(exception_frame_t *frame)
     if (code != 0)
     {
         now = uptime_ms();
-        /* Linux 语义：KEY 事件后跟 SYN_REPORT 分组 */
+        /* KEY 事件后跟 SYN 分组 */
         kbd_push_event(now, INPUT_EV_KEY, code, press);
         kbd_push_event(now, INPUT_EV_SYN, INPUT_SYN_REPORT, 0);
-        /* 缓冲满则丢弃新事件；回显由用户态负责，这里不再输出 */
+        /* 缓冲满丢弃，回显由用户态负责 */
         w = g_kbd_waiter;
         g_kbd_waiter = NULL;
         if (w != NULL)
@@ -235,14 +234,14 @@ void init_kbd()
 {
     uint8_t cfg;
 
-    /* 关闭两端，排空，再开第一端口并启用 IRQ */
+    /* 关端口并排空 */
     kbd_write_cmd(KBD_CMD_DISABLE_PORT1);
     kbd_write_cmd(KBD_CMD_DISABLE_PORT2);
     kbd_flush_output();
 
     kbd_write_cmd(KBD_CMD_READ_CFG);
     cfg = kbd_read_data();
-    /* bit0：第一端口中断；bit1：第二端口中断；bit6：XT 翻译（保持以便得到 set1） */
+    /* 开端口中断，保持扫描码翻译 */
     cfg |= (1u << 0);
     cfg &= (uint8_t)~(1u << 1);
     kbd_write_cmd(KBD_CMD_WRITE_CFG);
@@ -312,12 +311,12 @@ int64_t kbd_read_blocking(void *buf, uint64_t len)
             return (int64_t)n;
         }
 
-        /* 单用户任务：直接覆盖等待位（唤醒时已清零，不会残留） */
+        /* 单用户直接覆盖等待位 */
         g_kbd_waiter = sched_current();
         sched_block();
         spin_unlock_irqrestore(&g_kbd_lock, flags);
 
-        /* 被 sched_unblock 唤醒后回来重查；yield 不持任何锁 */
+        /* 被唤醒后重查 */
         yield();
     }
 }
@@ -328,7 +327,7 @@ static int64_t kbd0_write(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t 
     (void)f;
     (void)buf;
     (void)len;
-    return VFS_ERR_NOTSUP; /* 纯输入设备，不可写 */
+    return VFS_ERR_NOTSUP; /* 纯输入设备不可写 */
 }
 
 static const vdev_char_ops_t g_kbd0_ops = {

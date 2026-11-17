@@ -7,7 +7,7 @@
 
 static uint64_t *kernel_pml4;
 
-/* map/unmap 的目标根；调度器随任务切换，启动期为 NULL（回退 master） */
+/* 当前地址空间根，随任务切换 */
 static uint64_t *g_active_pml4 = NULL;
 
 uint64_t *vmm_master_pml4(void);
@@ -71,7 +71,7 @@ static uint64_t *table_from_entry(uint64_t entry)
 {
     if (!(entry & PTE_PRESENT))
         return NULL;
-    /* identity map 下物理地址可直接当指针 */
+    /* 恒等映射下直接转指针 */
     return (uint64_t *)(uintptr_t)pte_addr(entry);
 }
 
@@ -81,7 +81,7 @@ static uint64_t *get_or_alloc_table(uint64_t *parent, uint64_t index)
 
     if (parent[index] & PTE_PRESENT)
     {
-        /* 大页不可再下钻 */
+        /* 大页不可细分 */
         if (parent[index] & PTE_HUGE)
             return NULL;
         return table_from_entry(parent[index]);
@@ -96,7 +96,7 @@ static uint64_t *get_or_alloc_table(uint64_t *parent, uint64_t index)
     return (uint64_t *)page;
 }
 
-/* 显存描述（map_framebuffer 时记录；无显存时全 0），供 fb0 设备与 fbmap 用 */
+/* 显存描述，供设备与映射查询 */
 static uint64_t g_fb_base;
 static uint64_t g_fb_size;
 static uint32_t g_fb_width;
@@ -230,13 +230,12 @@ void vmm_switch_active(uint64_t *root)
         root = kernel_pml4;
     if (root == g_active_pml4)
         return;
-    /* 内核半与 identity 映射处处相同，切 CR3 安全 */
+    /* 内核映射相同，切页表安全 */
     load_cr3((uint64_t)(uintptr_t)root);
     g_active_pml4 = root;
 }
 
-/* 拆除 [start, end) 内 4K 用户页映射并归还物理页，exec 替换映像前调用。
- * 只动 leaf 且 PTE_USER 置位的表项；页表页本身暂不回收（exec 低频）。 */
+/* 拆除用户区间映射并归还物理页 */
 void unmap_user_range(uint64_t start, uint64_t end)
 {
     uint64_t *root = vmm_active_pml4();
@@ -256,7 +255,7 @@ void unmap_user_range(uint64_t start, uint64_t end)
         uint64_t e;
 
         if (va + PAGE_SIZE < va)
-            break; /* 回绕 */
+            break; /* 地址回绕 */
         if (!(pml4e & PTE_PRESENT) || (pml4e & PTE_HUGE))
             continue;
         pdpt = table_from_entry(pml4e);
@@ -278,7 +277,7 @@ void unmap_user_range(uint64_t start, uint64_t end)
         if (!(e & PTE_PRESENT) || !(e & PTE_USER) || (e & PTE_HUGE))
             continue;
         if (!(e & PTE_GLOBAL))
-            free_page(e & PTE_ADDR_MASK); /* GLOBAL=MMIO 借用页：只拆映射，不归还 */
+            free_page(e & PTE_ADDR_MASK); /* MMIO 页只拆映射不归还 */
         pt[(va >> 12) & 0x1FF] = 0;
         invlpg(va);
     }
@@ -297,7 +296,7 @@ void init_vmm(boot_info_t *boot)
         return;
     }
 
-    // PML4：长模式下4级分页的最顶层目录
+    /* PML4：长模式下4级分页的最顶层目录 */
     pml4_page = (void *)alloc_page();
     if (pml4_page == NULL)
     {
@@ -308,7 +307,7 @@ void init_vmm(boot_info_t *boot)
     kernel_memset(pml4_page, 0, (uint32_t)PAGE_SIZE);
     kernel_pml4 = (uint64_t *)pml4_page;
 
-    /* 在仍使用 UEFI 页表时建表；完成后切换 CR3 */
+    /* 建表后切换页表 */
     for (pa = 0; pa < phys_end; pa += PAGE_SIZE)
     {
         if (map_page(pa, pa, PTE_PRESENT | PTE_WRITABLE) != 0)
@@ -336,7 +335,7 @@ void init_vmm(boot_info_t *boot)
                 kernel_virt_start(), kernel_phys_start(), kernel_phys_end());
 }
 
-/* 用户区必须落在单个 PDPT 槽内（当前 USER_IMAGE 窗口满足），否则拒绝 */
+/* 用户区须落在单个页表槽内 */
 static int user_slot_ok(uint64_t start, uint64_t end, uint64_t *slot_out)
 {
     uint64_t s = (start >> 30) & 0x1FF;
@@ -420,7 +419,7 @@ int vmm_clone_user_range(uint64_t *dst_pml4, uint64_t *src_pml4,
     if (src_pdpt == NULL || dst_pdpt == NULL)
         return -1;
     if (!(src_pdpt[slot] & PTE_PRESENT))
-        return 0; /* 源为空，无需拷贝 */
+        return 0; /* 源为空无需拷贝 */
     if (!(dst_pdpt[slot] & PTE_PRESENT) || (dst_pdpt[slot] & PTE_HUGE))
         return -1;
     src_pd = table_from_entry(src_pdpt[slot]);
@@ -446,7 +445,7 @@ int vmm_clone_user_range(uint64_t *dst_pml4, uint64_t *src_pml4,
         if (dpt == NULL)
             return -1;
         kernel_memset(dpt, 0, (uint32_t)PAGE_SIZE);
-        /* 先挂链再拷页：中途失败由 vmm_free_user_pml4 整体回滚 */
+        /* 先挂链再拷页 */
         dst_pd[pdi] = ((uint64_t)(uintptr_t)dpt) | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
         for (li = 0; li < 512; li++)
         {
@@ -455,10 +454,10 @@ int vmm_clone_user_range(uint64_t *dst_pml4, uint64_t *src_pml4,
             if (!(le & PTE_PRESENT) || (le & PTE_HUGE))
                 continue;
             if (le & PTE_GLOBAL)
-                continue; /* MMIO 借用页不克隆：子任务按需 fbmap() 重建 */
+                continue; /* MMIO 页不克隆 */
             if (!(le & PTE_USER))
             {
-                dpt[li] = le; /* 非用户页：共享映射，不归还 */
+                dpt[li] = le; /* 非用户页共享映射 */
                 continue;
             }
             {
@@ -515,7 +514,7 @@ void vmm_free_user_pml4(uint64_t *pml4, uint64_t start, uint64_t end)
 
                             if ((le & PTE_PRESENT) && (le & PTE_USER) &&
                                 !(le & PTE_HUGE) && !(le & PTE_GLOBAL))
-                                free_page(le & PTE_ADDR_MASK); /* GLOBAL=MMIO 借用页不归还 */
+                                free_page(le & PTE_ADDR_MASK); /* MMIO 页不归还 */
                         }
                         free_page((uint64_t)(uintptr_t)pt);
                     }

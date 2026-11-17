@@ -26,7 +26,7 @@ static comp_reader_t g_evtr;
 
 static uint32_t g_wx;
 static uint32_t g_wy;
-static uint32_t g_ww; /* 窗口像素宽（居中留边时全窗铺底用） */
+static uint32_t g_ww; /* 窗口像素宽 */
 static uint32_t g_wh; /* 窗口像素高 */
 static uint32_t g_cols;
 static uint32_t g_rows; /* 含底行状态行 */
@@ -34,16 +34,16 @@ static uint32_t g_cx;
 static uint32_t g_cy;
 static uint32_t g_cw = COMP_FONT_W; /* 单元格像素宽 = 8*scale */
 static uint32_t g_ch = COMP_FONT_H; /* 单元格像素高 = 16*scale */
-static uint32_t g_ox;               /* 网格居中偏移（窗口相对） */
+static uint32_t g_ox;               /* 网格居中偏移 */
 static uint32_t g_oy;
 
 static char g_screen[TERM_MAX_ROWS][TERM_MAX_COLS];
 
-/* 用户栈仅一页：事件负载缓冲放 bss */
+/* 事件负载缓冲放 bss（用户栈仅一页） */
 static uint8_t g_evt_payload[COMP_MAX_PAYLOAD];
 static comp_hdr_t g_evth;
 
-static int g_mx; /* 状态行用的鼠标位置（屏坐标） */
+static int g_mx; /* 状态行用的鼠标位置 */
 static int g_my;
 static uint32_t g_mbuttons;
 
@@ -101,7 +101,7 @@ static int send_text(uint32_t x, uint32_t y, uint32_t color,
     return (int)comp_send(g_cmdfd, COMP_MSG_TEXT, p, 14 + n);
 }
 
-/* 网格→窗口像素（含居中偏移） */
+/* 网格转窗口像素 */
 static uint32_t cell_x(uint32_t cx)
 {
     return g_ox + cx * g_cw;
@@ -284,9 +284,8 @@ static int term_puts(const char *s)
     return 0;
 }
 
-/* 与 compositor 握手：开两端 → 收 WIN。
- * 注意 do_sys_open 失败不填 errno，无从区分 ENOENT（fifo 未建）；
- * 一律按“对端未就绪”重试， bounded 等待后仍失败才退出（init 会重拉）。 */
+/* 与 compositor 握手：开两端收 WIN */
+/* 对端未就绪则重试等待；超时退出由 init 重拉 */
 static int term_handshake(void)
 {
     comp_hdr_t h;
@@ -327,7 +326,7 @@ static int term_handshake(void)
         return -1;
     }
     comp_reader_init(&g_evtr);
-    /* WIN 是阻塞首帧：compositor 握手成功后必发 */
+    /* WIN 是阻塞首帧 */
     if (comp_read_all(g_evtfd, &h, sizeof(h)) != 0)
         return -1;
     if (h.magic != COMP_IPC_MAGIC || h.type != COMP_MSG_WIN ||
@@ -352,7 +351,7 @@ static int term_handshake(void)
         g_cols = TERM_MAX_COLS;
     if (g_rows > TERM_MAX_ROWS)
         g_rows = TERM_MAX_ROWS;
-    /* 网格小于窗口时居中（左右/上下留边，底色由 full_redraw 铺满） */
+    /* 网格小于窗口时居中留边 */
     g_ox = (w.w > g_cols * g_cw) ? (w.w - g_cols * g_cw) / 2 : 0;
     g_oy = (w.h > g_rows * g_ch) ? (w.h - g_rows * g_ch) / 2 : 0;
     printf("term: win %ux%u scale %u grid %ux%u\n",
@@ -409,7 +408,7 @@ int main()
             if (fr == 0)
                 break;
             if (fr < 0)
-                goto reconnect; /* compositor 挂了：重连 */
+                goto reconnect; /* compositor 挂了，重连 */
             idle = 0;
             if (h->type != COMP_MSG_EVTS)
                 continue;

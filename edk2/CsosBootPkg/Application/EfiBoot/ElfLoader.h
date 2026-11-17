@@ -4,17 +4,12 @@
 #include <Uefi.h>
 #include <IndustryStandard/Elf64.h>
 
-/**
-  Load an ELF64 kernel from a file handle.
-
-  @param[in]   Root       EFI root directory
-  @param[in]   FileName   Kernel ELF path (e.g. L"\\kernel.elf")
-  @param[out]  EntryPoint Kernel entry address
-  @param[out]  KernelBase Lowest loaded physical address
-
-  @retval EFI_SUCCESS     Success
-  @retval Others          Failure
-**/
+/* Load ELF64 kernel from a file handle. */
+/* @param Root EFI root directory. */
+/* @param FileName Kernel ELF path, e.g. L"\\kernel.elf". */
+/* @param EntryPoint Kernel entry address. */
+/* @param KernelBase Lowest loaded physical address. */
+/* @retval EFI_SUCCESS Success, others on failure. */
 EFI_STATUS
 LoadElf64(
     IN EFI_FILE_PROTOCOL *Root,

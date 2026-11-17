@@ -23,11 +23,11 @@ static const uint8_t PART_GPT_MAGIC[8] = {'E', 'F', 'I', ' ', 'P', 'A', 'R', 'T'
 
 typedef struct part_entry
 {
-    uint8_t type; /* MBR 分区类型；GPT 项固定为 0xEE */
+    uint8_t type; /* 分区类型，GPT 固定为 0xEE */
     uint64_t start;
     uint64_t sectors;
-    uint8_t is_gpt;        /* 1 = 来自 GPT */
-    uint8_t type_guid[16]; /* 仅 is_gpt=1 时有效（原始小端字节序） */
+    uint8_t is_gpt;        /* GPT 来源标志 */
+    uint8_t type_guid[16]; /* 类型 GUID */
 } part_entry_t;
 
 typedef struct part_disk
@@ -65,8 +65,7 @@ static uint64_t part_rd64(const uint8_t *p)
     return (uint64_t)part_rd32(p) | ((uint64_t)part_rd32(p + 4) << 32);
 }
 
-/* CRC32（IEEE 802.3，多项式 0xEDB88320），GPT 头/表校验用。
- * 用法：crc = 0xFFFFFFFF; crc = part_crc32_update(crc, buf, len); ...; final = crc ^ 0xFFFFFFFF */
+/* CRC32 校验用 */
 static uint32_t part_crc32_update(uint32_t crc, const uint8_t *p, uint32_t len)
 {
     uint32_t i;
@@ -97,7 +96,7 @@ static char part_hexchar(uint8_t v)
     return (char)(v < 10 ? '0' + v : 'A' + (v - 10));
 }
 
-/* 按 EFI GUID 显示字节序格式化 36 字符 + '\0'（调用者保证 out >= 37 字节） */
+/* 格式化 GUID 字符串 */
 static void part_guid_str(const uint8_t *g, char *out)
 {
     static const uint8_t pos[16] = {3, 2, 1, 0, 5, 4, 7, 6,
@@ -117,7 +116,7 @@ static void part_guid_str(const uint8_t *g, char *out)
     out[i] = '\0';
 }
 
-/* 十进制追加到 buf（调用者保证空间），返回新长度 */
+/* 十进制追加到缓冲 */
 static uint32_t part_put_dec(char *buf, uint32_t n, uint32_t v)
 {
     char rev[10];
@@ -211,8 +210,7 @@ static void part_add_gpt(part_disk_t *pd, uint8_t drive, const uint8_t *type_gui
     pd->count++;
 }
 
-/* 扩展分区链：EBR 表首项为逻辑分区（相对本 EBR），次项指向下一个
- * EBR（相对扩展分区基址 ext_base） */
+/* 扩展分区链扫描 */
 static void part_scan_ext(part_disk_t *pd, uint8_t drive, uint64_t ext_base,
                           vdev_t *parent)
 {
@@ -254,7 +252,7 @@ static int part_mbr_has_protective(const uint8_t *mbr)
     return 0;
 }
 
-/* 按字节偏移从磁盘读 len 字节（len <= 1024），处理跨扇区情况 */
+/* 按字节偏移读磁盘，处理跨扇区 */
 static int part_read_range(vdev_t *parent, uint64_t byte_off, uint8_t *out, uint32_t len)
 {
     uint8_t sec[PART_SEC_SIZE];
@@ -345,7 +343,7 @@ static int part_scan_gpt(part_disk_t *pd, uint8_t drive, const uint8_t *mbr,
         return has_protective ? 1 : 0;
     }
 
-    /* 先整表校验 CRC，再解析，避免半截表被部分注册 */
+    /* 先校验整表再解析 */
     entries_crc_calc = 0xffffffffu;
     for (s = 0; s < entries_secs; s++)
     {

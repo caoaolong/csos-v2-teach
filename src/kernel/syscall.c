@@ -43,15 +43,15 @@ static int user_mem_ok(uint64_t vaddr, uint64_t size)
     if (vaddr < PAGE_SIZE)
         return 0;
     if (vaddr + size < vaddr)
-        return 0; /* 回绕 */
+        return 0; /* 地址回绕 */
     if (vaddr + size > (uint64_t)0x0000800000000000ULL)
-        return 0; /* 须在 canonical 低半部 */
+        return 0; /* 须在低半部 */
     if (vaddr + size > KERNEL_VIRT_BASE)
         return 0;
     return 1;
 }
 
-/* 用户路径逐字节拷入内核栈缓冲（带越界检查），要求 NUL 结尾；定义在后，先声明 */
+/* 用户路径拷入内核缓冲，要求 NUL 结尾 */
 static int copy_path_from_user(uint64_t upath, char *kpath, uint32_t cap);
 
 static void do_sys_write(exception_frame_t *frame)
@@ -80,8 +80,8 @@ static void do_sys_write(exception_frame_t *frame)
         return;
     }
 
-    /* vfs 层已按 O_RDONLY/O_WRONLY 做方向校验 */
-    /* O_NONBLOCK：AGAIN 直接回 -EAGAIN（libc 转 errno），不 yield 重试 */
+    /* vfs 层已做方向校验 */
+    /* 非阻塞时 AGAIN 直接返回 */
     for (;;)
     {
         n = vfs_write(f, (const void *)(uintptr_t)ubuf, len);
@@ -97,7 +97,7 @@ static void do_sys_write(exception_frame_t *frame)
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
-/* pipe：rdi=int[2] 用户缓冲区，填入读/写 fd；成功 0，失败 -1 */
+/* pipe：填入读端与写端 fd */
 static void do_sys_pipe(exception_frame_t *frame)
 {
     uint64_t uaddr = frame->rdi;
@@ -127,7 +127,7 @@ static void do_sys_pipe(exception_frame_t *frame)
     wfd = fd_install(wf);
     if (wfd < 0)
     {
-        fd_close(rfd); /* 级联 vfs_close(rf) */
+        fd_close(rfd); /* 级联关闭读端 */
         vfs_close(wf);
         frame->rax = (uint64_t)-1;
         return;
@@ -137,8 +137,7 @@ static void do_sys_pipe(exception_frame_t *frame)
     frame->rax = 0;
 }
 
-/* mkfifo：rdi=path（座位在 pipefs /pipe 下，如 "/pipe/log"）；
- * 成功 0，失败回负错误码（-EEXIST/-ENOENT/-ENOMEM/-EINVAL）。 */
+/* mkfifo：在 /pipe 下创建命名管道 */
 static void do_sys_mkfifo(exception_frame_t *frame)
 {
     char kpath[VFS_PATH_MAX];
@@ -165,10 +164,7 @@ static void do_sys_mkfifo(exception_frame_t *frame)
         frame->rax = (uint64_t)-EINVAL;
 }
 
-/* fbmap：将整块显存映射进当前任务地址空间 [USER_FB_BASE, +实际大小），
- * 返回像素起点虚地址（phys 未页对齐时带偏移），失败 -1。
- * 只映射 GOP 上报的显存段（内核校验 phys 范围，不接受任意物理地址）；
- * 幂等，可重复调用；fork 连页拷贝继承，exec 清窗后下次调用重建。 */
+/* fbmap：映射显存到用户地址空间 */
 static void do_sys_fbmap(exception_frame_t *frame)
 {
     task_t *cur = sched_current();
@@ -188,7 +184,7 @@ static void do_sys_fbmap(exception_frame_t *frame)
     vmm_framebuffer_info(&base, &size, NULL, NULL, NULL, NULL, NULL);
     if (base == 0 || size == 0)
     {
-        frame->rax = (uint64_t)-1; /* 无显存的机器 */
+        frame->rax = (uint64_t)-1; /* 无显存 */
         return;
     }
     pa_start = base & ~(PAGE_SIZE - 1);
@@ -202,7 +198,7 @@ static void do_sys_fbmap(exception_frame_t *frame)
     irqf = irq_save();
     for (va = USER_FB_BASE; va < USER_FB_BASE + map_len; va += PAGE_SIZE)
     {
-        /* PTE_GLOBAL：MMIO 借用页，unmap/回收时只拆映射不清算物理页 */
+        /* MMIO 页只拆映射不释放 */
         if (map_page(va, pa_start + (va - USER_FB_BASE),
                      PTE_PRESENT | PTE_WRITABLE | PTE_USER |
                          PTE_WRITE_THROUGH | PTE_GLOBAL) != 0)
@@ -210,7 +206,7 @@ static void do_sys_fbmap(exception_frame_t *frame)
     }
     if (va != USER_FB_BASE + map_len)
     {
-        unmap_user_range(USER_FB_BASE, va); /* 回滚本轮已映射页（只拆映射，不释 MMIO） */
+        unmap_user_range(USER_FB_BASE, va); /* 回滚本轮已映射页 */
         irq_restore(irqf);
         frame->rax = (uint64_t)-1;
         return;
@@ -219,9 +215,7 @@ static void do_sys_fbmap(exception_frame_t *frame)
     frame->rax = USER_FB_BASE + off;
 }
 
-/* fbctl：屏幕归属仲裁。acquire=compositor 接管（console 停写屏/tick/光标，
- * 文字模型冻结，输出只走串口）；release=交还 console（按模型重画恢复）。
- * panic 页走独立路径，无条件夺回，不经过这里。 */
+/* fbctl：屏幕归属仲裁 */
 static void do_sys_fbctl(exception_frame_t *frame)
 {
     uint64_t op = frame->rdi;
@@ -248,7 +242,7 @@ static void do_sys_exit(exception_frame_t *frame)
     task_exit_current((int)frame->rdi);
 }
 
-/* fork：子任务复制父地址空间 + trap 帧 + fd 表；父返回子 pid，子返回 0 */
+/* fork：复制地址空间与 fd 表，父返回子 pid */
 static void do_sys_fork(exception_frame_t *frame)
 {
     task_t *cur = sched_current();
@@ -288,7 +282,7 @@ static void do_sys_fork(exception_frame_t *frame)
     frame->rax = (uint64_t)child->pid;
 }
 
-/* wait：rdi=status(out,可0)；rsi 必须为 0（flags 预留给未来 WNOHANG） */
+/* wait：等待子进程退出 */
 static void do_sys_wait(exception_frame_t *frame)
 {
     uint64_t ustatus = frame->rdi;
@@ -325,7 +319,7 @@ static void do_sys_wait(exception_frame_t *frame)
     }
 }
 
-/* getpid/getppid：取当前/父任务 pid；无父返回 -1 */
+/* 取当前或父进程 pid */
 static void do_sys_getpid(exception_frame_t *frame)
 {
     task_t *cur = sched_current();
@@ -374,8 +368,7 @@ static void do_sys_read(exception_frame_t *frame)
         return;
     }
 
-    /* 阻塞语义：AGAIN 时 yield 重试，其余错误直接回 -1；
-     * O_NONBLOCK：AGAIN 直接回 -EAGAIN（libc 转 errno），不阻塞 */
+    /* 阻塞时 AGAIN 重试，非阻塞直接返回 */
     for (;;)
     {
         n = vfs_read(f, (void *)(uintptr_t)ubuf, len);
@@ -391,7 +384,7 @@ static void do_sys_read(exception_frame_t *frame)
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
-/* 用户路径逐字节拷入内核栈缓冲（带越界检查），要求 NUL 结尾 */
+/* 用户路径拷入内核缓冲，要求 NUL 结尾 */
 static int copy_path_from_user(uint64_t upath, char *kpath, uint32_t cap)
 {
     uint32_t i;
@@ -405,7 +398,7 @@ static int copy_path_from_user(uint64_t upath, char *kpath, uint32_t cap)
             break;
     }
     if (i >= cap)
-        return -1; /* 无 NUL：ENAMETOOLONG */
+        return -1; /* 缺 NUL 结尾 */
     if (i == 0)
         return -1; /* 空路径 */
     return 0;
@@ -419,8 +412,7 @@ static void do_sys_open(exception_frame_t *frame)
     int rc;
     uint64_t flags = frame->rsi;
 
-    /* rdx mode 保留：vfs_open 暂无 mode 参数，CREAT 用默认权限 */
-
+    /* mode 参数暂保留 */
     if (copy_path_from_user(frame->rdi, kpath, (uint32_t)sizeof(kpath)) != 0)
     {
         frame->rax = (uint64_t)-1;
@@ -437,7 +429,7 @@ static void do_sys_open(exception_frame_t *frame)
     if (fd < 0)
     {
         vfs_close(vf);
-        frame->rax = (uint64_t)-1; /* EMFILE/NOMEM */
+        frame->rax = (uint64_t)-1; /* 表满或无内存 */
         return;
     }
     frame->rax = (uint64_t)fd;
@@ -473,9 +465,7 @@ static void do_sys_lseek(exception_frame_t *frame)
     frame->rax = n < 0 ? (uint64_t)-1 : (uint64_t)n;
 }
 
-/* brk：rdi=new_brk（0=查询当前值）；成功返回调整后 brk，失败返回 -1。
- * 堆 == [heap_base, ALIGN_UP(heap_brk)) 必已映射，上界卡在 USER_FB_BASE
- * （顶部 32MB 是显存映射窗，堆不得进入）。 */
+/* brk：调整堆顶，失败返回 -1 */
 static void do_sys_brk(exception_frame_t *frame)
 {
     task_t *cur = sched_current();
@@ -550,7 +540,7 @@ static void do_sys_brk(exception_frame_t *frame)
 
 typedef void (*sys_fn_t)(exception_frame_t *frame);
 
-/* execve 定义在表之后，先声明 */
+/* execve 在表后定义，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
 static const sys_fn_t g_sys_table[SYS_FBCTL + 1] = {
@@ -574,10 +564,10 @@ static const sys_fn_t g_sys_table[SYS_FBCTL + 1] = {
     [SYS_FBCTL] = do_sys_fbctl,
 };
 
-/* exec 参数包：16 项 × 每项上限 256（含 NUL），与 user.h EXEC_MAX_ARGS 对齐 */
+/* exec 参数包上限 4KB */
 #define EXEC_ARG_BUNDLE 4096U
 
-/* 用户指针数组逐项拷入内核 bundle，返回个数；uaddr==0 视为 0 个 */
+/* 用户参数拷入内核，返回个数 */
 static int copy_args_from_user(uint64_t uaddr, char *bundle, char *kptrs[])
 {
     int n = 0;
@@ -616,7 +606,7 @@ static int copy_args_from_user(uint64_t uaddr, char *bundle, char *kptrs[])
     return n;
 }
 
-/* execve 改写 trap 帧（rip/rsp）实现替换，失败时原映像完好 */
+/* execve 改写陷阱帧实现替换 */
 static void do_sys_execve(exception_frame_t *frame)
 {
     char kpath[VFS_PATH_MAX];
@@ -658,7 +648,7 @@ static void do_sys_execve(exception_frame_t *frame)
     kfree(kabundle);
     kfree(kenbundle);
 
-    /* 成功不返回：sysret 按新 rip/rsp 进入新程序 */
+    /* 成功后按新地址进入新程序 */
     frame->rip = entry;
     frame->rsp = rsp;
     frame->rax = 0;
@@ -673,7 +663,7 @@ void handler_syscall(exception_frame_t *frame)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);
-        frame->rax = (uint64_t)-1; /* ENOSYS */
+        frame->rax = (uint64_t)-1; /* 无效系统调用号 */
         return;
     }
 

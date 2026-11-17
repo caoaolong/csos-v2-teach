@@ -9,44 +9,32 @@
 #include <Uefi.h>
 #include "SetupNvData.h"
 
-/**
-  Select and apply the GOP mode for boot based on setup configuration.
-  Skips SetMode when the target mode is already active.
-
-  @param[in] Setup  Boot setup options (may be NULL for EDID-preferred defaults).
-
-  @retval EFI_SUCCESS       Mode is active (unchanged or switched).
-  @retval EFI_UNSUPPORTED   GOP is unavailable.
-**/
+/* Select and apply the GOP boot mode. */
+/* Skips SetMode when the target is already active. */
+/* @param Setup Boot setup options, may be NULL. */
+/* @retval EFI_SUCCESS Mode active. */
+/* @retval EFI_UNSUPPORTED No GOP. */
 EFI_STATUS
 BootGraphicsApplyMode (
   IN CONST CSOS_SETUP_CONFIGURATION  *Setup
   );
 
-/**
-  Return the GOP mode index that BootGraphicsApplyMode() would select.
-
-  @param[in]  Setup     Boot setup options.
-  @param[out] ModeIndex Selected mode index.
-
-  @retval EFI_SUCCESS  ModeIndex is valid.
-**/
+/* Return the GOP mode that ApplyMode would select. */
+/* @param Setup Boot setup options. */
+/* @param ModeIndex Selected mode index. */
+/* @retval EFI_SUCCESS ModeIndex valid. */
 EFI_STATUS
 BootGraphicsSelectMode (
   IN  CONST CSOS_SETUP_CONFIGURATION  *Setup,
   OUT UINT32                          *ModeIndex
   );
 
-/**
-  Report the panel physical size from EDID (millimeters, 0 = unknown).
-
-  @param[out] WidthMm   Physical width in mm (0 if unavailable).
-  @param[out] HeightMm  Physical height in mm (0 if unavailable).
-
-  @retval EFI_SUCCESS            Size reported (both nonzero).
-  @retval EFI_NOT_FOUND          No usable EDID / unknown dimensions.
-  @retval EFI_INVALID_PARAMETER  NULL output pointer.
-**/
+/* Report panel physical size from EDID in mm, 0 means unknown. */
+/* @param WidthMm Physical width in mm, 0 if unavailable. */
+/* @param HeightMm Physical height in mm, 0 if unavailable. */
+/* @retval EFI_SUCCESS Size reported, both nonzero. */
+/* @retval EFI_NOT_FOUND No usable EDID or unknown size. */
+/* @retval EFI_INVALID_PARAMETER NULL output pointer. */
 EFI_STATUS
 BootGraphicsEdidPhysicalSize (
   OUT UINT32  *WidthMm,

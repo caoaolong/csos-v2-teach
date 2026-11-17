@@ -8,30 +8,28 @@
 #define EXT4_EH_MAGIC 0xf30au
 #define EXT4_ROOT_INO 2u
 
-/* s_feature_incompat：本驱动可解析的子集 */
+/* 支持的不兼容特性子集 */
 #define EXT4_FT_FILETYPE 0x0002u
 #define EXT4_FT_EXTENTS 0x0040u
 #define EXT4_FT_64BIT 0x0080u
 #define EXT4_INCOMPAT_SUPP (EXT4_FT_FILETYPE | EXT4_FT_EXTENTS | EXT4_FT_64BIT)
 
-/* i_flags */
+/* 索引节点标志 */
 #define EXT4_EXTENTS_FL 0x00080000u
 
-/* i_mode 文件类型 */
+/* 文件类型掩码 */
 #define EXT4_S_IFMT 0xf000u
 #define EXT4_S_IFDIR 0x4000u
 #define EXT4_S_IFREG 0x8000u
 #define EXT4_S_IFLNK 0xa000u
 
-/* 目录项文件类型 */
+/* 目录项类型 */
 #define EXT4_FT_DIR 2u
 
-/* 本驱动只支持 block_size == 512 的 vdev（见 ext4_mount 校验）；
- * 不直接用 ATA_SECTOR_SIZE：那是 ATA 层的常量，FS 应对接 vdev 抽象。
- * fat32/part 同样各自定义本地常量（FAT32_SECTOR/PART_SEC_SIZE）。 */
+/* 仅支持 512 字节块设备 */
 #define EXT4_DEV_BLK 512u
 
-/* extent 未初始化位（ee_len 最高位）：读出为全 0 */
+/* 未初始化 extent 标志位 */
 #define EXT4_EE_UNINIT 0x8000u
 #define EXT4_EE_LEN_MASK 0x7fffu
 
@@ -39,28 +37,28 @@
 
 typedef struct ext4_sb
 {
-    vdev_t *dev;               /* 内存：所属块设备，非盘上字段 */
-    uint32_t bs;               /* 派生：s_log_block_size（超块+24），bs = 1024 << log_bs */
-    uint32_t blk_per_fs;       /* 派生：bs / EXT4_DEV_BLK，非盘上字段 */
-    uint64_t total_blocks;     /* 直读：s_blocks_count_lo（超块+4）| 64bit时拼 s_blocks_count_hi（超块+336）<< 32 */
-    uint32_t blocks_per_group; /* 直读：s_blocks_per_group（超块+32） */
-    uint32_t inodes_per_group; /* 直读：s_inodes_per_group（超块+40） */
-    uint32_t ngroups;          /* 派生：ceil(total_blocks / blocks_per_group)，非盘上字段 */
-    uint32_t inode_size;       /* 直读：s_inode_size（超块+88） */
-    uint32_t desc_size;        /* 直读：s_desc_size（超块+254，仅 64bit 有效，否则固定 32） */
-    uint32_t is_64bit;         /* 派生：s_feature_incompat（超块+96）bit 0x80 是否置位 */
-    uint8_t *gd;               /* 内存：读入的组描述符表（ngroups * desc_size），非盘上字段 */
+    vdev_t *dev;               /* 所属块设备 */
+    uint32_t bs;               /* 块大小，超块+24 派生 */
+    uint32_t blk_per_fs;       /* 每文件块设备块数 */
+    uint64_t total_blocks;     /* 总块数，超块+4，64 位拼+336 */
+    uint32_t blocks_per_group; /* 每组块数，超块+32 */
+    uint32_t inodes_per_group; /* 每组节点数，超块+40 */
+    uint32_t ngroups;          /* 组数 */
+    uint32_t inode_size;       /* 节点大小，超块+88 */
+    uint32_t desc_size;        /* 描述符大小，超块+254 */
+    uint32_t is_64bit;         /* 64 位标志，超块+96 */
+    uint8_t *gd;               /* 组描述符表 */
 } ext4_sb_t;
 
 typedef struct ext4_inode
 {
-    uint32_t ino;    /* 内存：传入的 inode 号，非盘上字段 */
-    uint16_t mode;   /* 直读：i_mode（inode+0，2 字节），类型+权限 */
-    uint64_t size;   /* 直读：i_size_lo（inode+4）| i_size_hi（inode+108）<< 32 */
-    uint32_t flags;  /* 直读：i_flags（inode+32），如 EXTENTS_FL 判 extent 文件 */
-    uint32_t is_dir; /* 派生：(mode & IFMT) == IFDIR 的缓存 */
-    uint32_t is_reg; /* 派生：(mode & IFMT) == IFREG 的缓存 */
-    uint8_t blk[60]; /* 直读：i_block（inode+40，60 字节），extent 树根 */
+    uint32_t ino;    /* 节点号 */
+    uint16_t mode;   /* 类型与权限，inode+0 */
+    uint64_t size;   /* 大小，inode+4 拼+108 */
+    uint32_t flags;  /* 标志，inode+32 */
+    uint32_t is_dir; /* 目录判断缓存 */
+    uint32_t is_reg; /* 文件判断缓存 */
+    uint8_t blk[60]; /* 数据块指针，inode+40 */
 } ext4_inode_t;
 
 static uint16_t ext4_rd16(const uint8_t *p)
@@ -74,7 +72,7 @@ static uint32_t ext4_rd32(const uint8_t *p)
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-/* fs 块号读写：换算为设备 LBA 后直通分区 vdev */
+/* 块号换算设备地址读写 */
 static int ext4_read_fs_blocks(ext4_sb_t *sb, uint64_t fsblk, uint32_t count, void *buf)
 {
     uint64_t lba;
@@ -95,7 +93,7 @@ static uint64_t ext4_itab_block(ext4_sb_t *sb, uint32_t group)
     uint64_t lo = ext4_rd32(d + 8);
 
     if (sb->is_64bit)
-        lo |= (uint64_t)ext4_rd32(d + 40) << 32; /* bg_inode_table_hi，见组描述符 64 字节布局 */
+        lo |= (uint64_t)ext4_rd32(d + 40) << 32; /* 高位表地址 */
     return lo;
 }
 
@@ -118,7 +116,7 @@ static int ext4_read_inode(ext4_sb_t *sb, uint32_t ino, ext4_inode_t *out)
     fsblk = ext4_itab_block(sb, group) + off / sb->bs;
     inner = off % sb->bs;
     if (inner + sb->inode_size > sb->bs)
-        return VFS_ERR_NOTSUP; /* inode 跨块：本实现不支持 */
+        return VFS_ERR_NOTSUP; /* 节点跨块不支持 */
 
     blk = (uint8_t *)kmalloc(sb->bs);
     if (!blk)
@@ -142,7 +140,7 @@ static int ext4_read_inode(ext4_sb_t *sb, uint32_t ino, ext4_inode_t *out)
     return VFS_OK;
 }
 
-/* extent 树内单层查找：leaf 输出物理块与未初始化标记 */
+/* extent 树单层查找 */
 static int ext4_map_walk(const uint8_t *node, uint32_t node_len, uint32_t lb,
                          uint64_t *phys_out, int *uninit_out,
                          ext4_sb_t *sb, uint8_t *scratch, int depth_left)
@@ -188,7 +186,7 @@ static int ext4_map_walk(const uint8_t *node, uint32_t node_len, uint32_t lb,
     if (depth_left <= 0 || depth > EXT4_MAX_DEPTH)
         return VFS_ERR_INVAL;
     {
-        /* 索引层：取 ee_block <= lb 的最后一项 */
+        /* 取覆盖逻辑块的索引项 */
         const uint8_t *e = node + 12;
         const uint8_t *best = NULL;
         uint64_t child;
@@ -212,17 +210,17 @@ static int ext4_map_walk(const uint8_t *node, uint32_t node_len, uint32_t lb,
     }
 }
 
-/* 逻辑块 -> 物理块；空洞返回 NOENT（调用者按全 0 处理） */
+/* 逻辑块转物理块，空洞返回缺失 */
 static int ext4_map(ext4_sb_t *sb, const ext4_inode_t *ino, uint32_t lb,
                     uint64_t *phys_out, int *uninit_out, uint8_t *scratch)
 {
     if ((ino->flags & EXT4_EXTENTS_FL) == 0)
-        return VFS_ERR_NOTSUP; /* 非 extent 文件（间接块）暂不支持 */
+        return VFS_ERR_NOTSUP; /* 非 extent 文件不支持 */
     return ext4_map_walk(ino->blk, 60, lb, phys_out, uninit_out, sb, scratch,
                          EXT4_MAX_DEPTH);
 }
 
-/* 在目录数据中取下一条有效目录项；off 为输入/输出字节偏移 */
+/* 取下一条有效目录项 */
 static int ext4_dir_next(ext4_sb_t *sb, const ext4_inode_t *dir, uint64_t *off,
                          uint32_t *ino_out, uint32_t *ftype_out,
                          char *name_out, uint32_t name_size)
@@ -263,7 +261,7 @@ static int ext4_dir_next(ext4_sb_t *sb, const ext4_inode_t *dir, uint64_t *off,
             kernel_memset(blk, 0, sb->bs);
         }
 
-        /* 块内沿 rec_len 链扫描 */
+        /* 块内沿链扫描 */
         while (pos + 8 <= sb->bs)
         {
             uint32_t ino = ext4_rd32(blk + pos);
@@ -303,7 +301,7 @@ static int ext4_dir_next(ext4_sb_t *sb, const ext4_inode_t *dir, uint64_t *off,
             rc = VFS_OK;
             goto out;
         }
-        /* 块内无有效项（理论上不应发生）：off 已指向块尾，继续下一块 */
+        /* 无有效项则继续下一块 */
     }
     rc = VFS_ERR_NOENT;
 
@@ -322,7 +320,7 @@ static int ext4_name_eq(const char *entry, const char *comp, uint32_t len)
     return entry[len] == '\0';
 }
 
-/* 路径查找：rel 为空即根；返回目标 ino。符号链接/非常规类型返回 NOTSUP */
+/* 路径查找，链接类型不支持 */
 static int ext4_lookup(ext4_sb_t *sb, const char *rel, uint32_t *ino_out)
 {
     uint32_t ino = EXT4_ROOT_INO;
@@ -378,7 +376,7 @@ static int ext4_lookup(ext4_sb_t *sb, const char *rel, uint32_t *ino_out)
                 ext4_inode_t t;
                 uint16_t mt;
 
-                /* 命中：非常规/链接类型直接拒绝（暂无 symlink 解析） */
+                /* 非常规类型直接拒绝 */
                 rc = ext4_read_inode(sb, e_ino, &t);
                 if (rc != VFS_OK)
                     return rc;
@@ -428,13 +426,13 @@ static int ext4_mount(vfs_mount_t *m, const char *dev)
     kernel_memset(sb, 0, (uint32_t)sizeof(*sb));
     sb->dev = vd;
 
-    /* 超级块位于字节偏移 1024，即设备 LBA 2~3 */
+    /* 超级块在字节偏移 1024 */
     rc = vd->bops->read_blocks(vd, 2, 2, sec);
     if (rc != 0)
         goto fail;
     if (ext4_rd16(sec + 56) != EXT4_MAGIC)
     {
-        rc = VFS_ERR_NODEV; /* 不是 ext4，交给自动挂载继续尝试下一分区 */
+        rc = VFS_ERR_NODEV; /* 非 ext4 交自动挂载重试 */
         goto fail;
     }
 
@@ -471,14 +469,14 @@ static int ext4_mount(vfs_mount_t *m, const char *dev)
     }
     sb->is_64bit = (incompat & EXT4_FT_64BIT) != 0;
     if (sb->is_64bit)
-        sb->total_blocks |= (uint64_t)ext4_rd32(sec + 336) << 32; /* s_blocks_count_hi */
+        sb->total_blocks |= (uint64_t)ext4_rd32(sec + 336) << 32; /* 高位块数 */
     if (sb->total_blocks == 0)
     {
         rc = VFS_ERR_NOTSUP;
         goto fail;
     }
 
-    sb->desc_size = sb->is_64bit ? ext4_rd16(sec + 254) : 32; /* s_desc_size */
+    sb->desc_size = sb->is_64bit ? ext4_rd16(sec + 254) : 32; /* 描述符大小 */
     if (sb->is_64bit && sb->desc_size < 64)
     {
         rc = VFS_ERR_NOTSUP;
@@ -509,12 +507,12 @@ static int ext4_mount(vfs_mount_t *m, const char *dev)
         rc = VFS_ERR_NOMEM;
         goto fail;
     }
-    /* bs=1024 时 GDT 起于块 2，否则块 1 */
+    /* 组描述符表起始块 */
     rc = ext4_read_fs_blocks(sb, sb->bs == 1024 ? 2 : 1, (uint32_t)gdt_blocks, sb->gd);
     if (rc != 0)
         goto fail;
 
-    /* 校验根 inode 可读且为目录 */
+    /* 校验根目录 */
     {
         ext4_inode_t root;
 
@@ -579,7 +577,7 @@ static int ext4_open(vfs_mount_t *m, const char *rel, int flags, vfs_file_t *f)
     if (!sb || !rel || !f)
         return VFS_ERR_INVAL;
     if ((flags & 0x03) != VFS_O_RDONLY)
-        return VFS_ERR_NOTSUP; /* 只读挂载 */
+        return VFS_ERR_NOTSUP; /* 只读 */
     if (flags & (VFS_O_CREAT | VFS_O_TRUNC | VFS_O_APPEND))
         return VFS_ERR_NOTSUP;
     want_dir = (flags & VFS_O_DIRECTORY) != 0;
@@ -665,7 +663,7 @@ static int64_t ext4_read(vfs_file_t *f, void *buf, uint64_t len)
         rc = ext4_map(sb, ip, lb, &phys, &uninit, blk);
         if (rc == VFS_ERR_NOENT || (rc == VFS_OK && uninit))
         {
-            kernel_memset(p, 0, chunk); /* 空洞/未初始化 extent 读零 */
+            kernel_memset(p, 0, chunk); /* 空洞读零 */
         }
         else if (rc == VFS_OK)
         {
@@ -676,7 +674,7 @@ static int64_t ext4_read(vfs_file_t *f, void *buf, uint64_t len)
         }
         else
         {
-            break; /* NOTSUP 等：返回已读部分，无已读则返回错误 */
+            break; /* 出错返回已读部分 */
         }
         p += chunk;
         f->pos += chunk;
@@ -695,7 +693,7 @@ static int64_t ext4_write(vfs_file_t *f, const void *buf, uint64_t len)
     (void)f;
     (void)buf;
     (void)len;
-    return VFS_ERR_NOTSUP; /* 只读挂载 */
+    return VFS_ERR_NOTSUP; /* 只读 */
 }
 
 static int64_t ext4_seek(vfs_file_t *f, int64_t off, int whence)
@@ -745,14 +743,14 @@ static int ext4_mkdir(vfs_mount_t *m, const char *rel)
 {
     (void)m;
     (void)rel;
-    return VFS_ERR_NOTSUP; /* 只读挂载 */
+    return VFS_ERR_NOTSUP; /* 只读 */
 }
 
 static int ext4_rmdir(vfs_mount_t *m, const char *rel)
 {
     (void)m;
     (void)rel;
-    return VFS_ERR_NOTSUP; /* 只读挂载 */
+    return VFS_ERR_NOTSUP; /* 只读 */
 }
 
 static int ext4_opendir(vfs_mount_t *m, const char *rel, vfs_dir_t *d)

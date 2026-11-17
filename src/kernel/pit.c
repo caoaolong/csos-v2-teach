@@ -8,7 +8,7 @@
 #define PIT_CMD 0x43
 #define PIT_CH0_DATA 0x40
 #define PIT_CH2_DATA 0x42
-/* Channel 2，lobyte/hibyte，mode 0（中断闸门），二进制 */
+/* 通道 2 模式 0 配置字 */
 #define PIT_CMD_CH2_MODE0 0xB0
 #define PIT_CMD_CH0_MODE3 0x36
 
@@ -46,7 +46,7 @@ int pit_ch2_oneshot_start(uint32_t duration_ms)
     if (duration_ms == 0)
         return -1;
 
-    /* count = 1193182 * ms / 1000，须落入 16 位 */
+    /* 计数须落入 16 位范围 */
     count = (PIT_INPUT_HZ * duration_ms) / 1000u;
     if (count == 0)
         count = 1;
@@ -55,7 +55,7 @@ int pit_ch2_oneshot_start(uint32_t duration_ms)
 
     port61 = inb(PORT_SPEAKER);
     g_port61_saved = port61;
-    /* 开 Ch2 gate，关扬声器数据位，避免校准期间发声 */
+    /* 开通道 2 门控，关扬声器避免发声 */
     outb(PORT_SPEAKER, (uint8_t)((port61 & ~SPEAKER_DATA) | SPEAKER_GATE_CH2));
 
     outb(PIT_CMD, PIT_CMD_CH2_MODE0);

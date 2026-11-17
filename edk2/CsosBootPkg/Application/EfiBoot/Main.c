@@ -15,7 +15,7 @@
 #define CSOS_BOOT_INFO_ADDR 0x40000ULL
 #define CSOS_BOOT_INFO_MAGIC 0xC505B007ULL
 
-/* Background #181818 (same for RGB/BGR when R=G=B) */
+/* Background #181818, same for RGB and BGR. */
 #define CSOS_BG_COLOR 0x00181818U
 
 typedef struct
@@ -27,19 +27,19 @@ typedef struct
     UINT32 framebuffer_pixels_per_scanline;
     UINT32 framebuffer_pixel_format; /* EFI_GRAPHICS_PIXEL_FORMAT */
 
-    // UEFI Memory Map
-    UINT64 memory_map;      // physical address of EFI_MEMORY_DESCRIPTOR*
-    UINT64 memory_map_size; // size in bytes
-    UINT64 descriptor_size; // size of each descriptor
+    /* UEFI Memory Map */
+    UINT64 memory_map;      /* physical address of EFI_MEMORY_DESCRIPTOR* */
+    UINT64 memory_map_size; /* size in bytes */
+    UINT64 descriptor_size; /* size of each descriptor */
     UINT32 descriptor_version;
 
     UINT64 rsdp;
 
-    UINT64 config_addr; // csos.cfg raw text (EfiLoaderData pages, 0 if absent)
-    UINT64 config_size; // bytes of csos.cfg (0 if absent)
+    UINT64 config_addr; /* csos.cfg raw text (EfiLoaderData pages, 0 if absent) */
+    UINT64 config_size; /* bytes of csos.cfg (0 if absent) */
 
-    UINT32 framebuffer_phys_w_mm; // panel physical width, mm (EDID; 0=unknown)
-    UINT32 framebuffer_phys_h_mm; // panel physical height, mm (EDID; 0=unknown)
+    UINT32 framebuffer_phys_w_mm; /* panel physical width, mm (EDID; 0=unknown) */
+    UINT32 framebuffer_phys_h_mm; /* panel physical height, mm (EDID; 0=unknown) */
 } BootInfo;
 
 typedef VOID (*KERNEL_ENTRY)(BootInfo *);
@@ -102,10 +102,10 @@ InitGraphics(
         return EFI_UNSUPPORTED;
     }
 
-    //
-    // Setup Utility already drew the UI; only record BootInfo here.
-    // Writing stride*height pixels can exceed FrameBufferSize and corrupt UEFI memory.
-    //
+
+    /* Setup Utility already drew the UI; only record BootInfo here. */
+    /* Writing stride*height pixels can exceed FrameBufferSize and corrupt UEFI memory. */
+
 
     return EFI_SUCCESS;
 }
@@ -227,8 +227,8 @@ UefiMain(
         return Status;
     }
 
-    // grub.cfg-style config: load and keep raw text for the kernel.
-    // Missing file is fine: CfgAddr/CfgSize stay 0, kernel uses defaults.
+    /* grub.cfg-style config: load and keep raw text for the kernel. */
+    /* Missing file is fine: CfgAddr/CfgSize stay 0, kernel uses defaults. */
     CfgAddr = 0;
     CfgSize = 0;
     {

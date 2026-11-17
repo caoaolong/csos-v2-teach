@@ -159,11 +159,8 @@ SetupLoadFromVariable(
         return Status;
     }
 
-    /*
-     * Clamp to the documented range: a stored timeout below the minimum
-     * (e.g. 0 from before the rule existed) self-heals to 3 seconds.
-     * This also rescues machines already stuck at timeout 0.
-     */
+    /* Clamp timeout to the documented range. */
+    /* Below minimum heals to 3 seconds. */
     if (Config->BootTimeout < CSOS_SETUP_MIN_TIMEOUT)
     {
         Config->BootTimeout = CSOS_SETUP_MIN_TIMEOUT;
@@ -636,9 +633,9 @@ VOID DrawSetupScreen(
     LabelX = CardX + 28;
     ValueX = CardX + CardW - 260;
 
-    //
-    // Boot timeout row
-    //
+
+    /* Boot timeout row */
+
     RowBg = (mFocus == FocusBootTimeout) ? &mClrFocus : &mClrSurface;
     LabelClr = &mClrText;
     GfxFillRect(CardX + 12, RowY, CardW - 24, RowH, RowBg);
@@ -657,9 +654,9 @@ VOID DrawSetupScreen(
 
     RowY += RowH;
 
-    //
-    // Auto boot toggle
-    //
+
+    /* Auto boot toggle */
+
     RowBg = (mFocus == FocusAutoBoot) ? &mClrFocus : &mClrSurface;
     GfxFillRect(CardX + 12, RowY, CardW - 24, RowH, RowBg);
     if (mFocus == FocusAutoBoot)
@@ -672,9 +669,9 @@ VOID DrawSetupScreen(
 
     RowY += RowH;
 
-    //
-    // GOP mode row (always selectable; stored to NVRAM on Save & Boot)
-    //
+
+    /* GOP mode row (always selectable; stored to NVRAM on Save & Boot) */
+
     RowBg = (mFocus == FocusGopMode) ? &mClrFocus : &mClrSurface;
     LabelClr = &mClrText;
     GfxFillRect(CardX + 12, RowY, CardW - 24, RowH, RowBg);
@@ -785,7 +782,8 @@ VOID DrawBootWaitScreen(
     H = mGop->Mode->Info->VerticalResolution;
     GfxFillRect(0, 0, W, H, &mClrBg);
 
-    /* Center the logo itself; hint text is drawn below and does not shift it. */
+    /* Center the logo itself. */
+    /* Hint text is drawn below without shifting it. */
     LogoX = (W > (UINTN)LOGO_WIDTH) ? ((W - (UINTN)LOGO_WIDTH) / 2) : 0;
     LogoY = (H > (UINTN)LOGO_HEIGHT) ? ((H - (UINTN)LOGO_HEIGHT) / 2) : 0;
 
@@ -1194,9 +1192,9 @@ VOID CsosShowFatalError(
         Status,
         (UINT64)Status);
 
-    //
-    // ConOut/serial log first: visible even when graphics is unavailable.
-    //
+
+    /* ConOut/serial log first: visible even when graphics is unavailable. */
+
     Print(L"EfiBoot: FATAL: %s: %s\n", Detail, Code);
 
     if (!EFI_ERROR(GfxInit()) && (mGop != NULL))
@@ -1220,9 +1218,9 @@ VOID CsosShowFatalError(
             GfxDrawTextCentered(Y + 86, &mClrMuted, &mClrErrBg, Code);
         }
 
-        //
-        // Drain keys pressed earlier (e.g. held F2) so the page stays visible.
-        //
+
+        /* Drain keys pressed earlier (e.g. held F2) so the page stays visible. */
+
         while (!EFI_ERROR(ReadKey(&Key)))
         {
         }
@@ -1237,10 +1235,10 @@ VOID CsosShowFatalError(
                     sizeof(Hint),
                     STR_ERR_HINT_FMT,
                     s);
-                //
-                // Erase only the text row itself: a full-width fill
-                // would wipe the border's vertical edges on this row.
-                //
+
+                /* Erase only the text row itself: a full-width fill */
+                /* would wipe the border's vertical edges on this row. */
+
                 if (HasBorder)
                 {
                     GfxFillRect(25, HintY, W - 50, 30, &mClrErrBg);
@@ -1262,9 +1260,9 @@ VOID CsosShowFatalError(
     }
     else
     {
-        //
-        // No graphics: park on ConOut text, any key reboots.
-        //
+
+        /* No graphics: park on ConOut text, any key reboots. */
+
         Print(L"EfiBoot: PRESS ANY KEY TO REBOOT\n");
         WaitForKey(&Key);
     }

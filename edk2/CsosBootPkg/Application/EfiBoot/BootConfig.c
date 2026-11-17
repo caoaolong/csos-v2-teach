@@ -63,7 +63,7 @@ LoadBootConfig(
         }
         if (Chunk == 0)
         {
-            break; // EOF
+            break; /* EOF */
         }
         Total += Chunk;
     }

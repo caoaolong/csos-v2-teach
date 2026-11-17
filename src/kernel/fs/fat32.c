@@ -6,7 +6,7 @@
 #include <kernel/serial.h>
 #include <kernel/string.h>
 
-/* ===== 盘上常量 ===== */
+/* 盘上常量 */
 #define FAT32_ATTR_RO 0x01
 #define FAT32_ATTR_HID 0x02
 #define FAT32_ATTR_SYS 0x04
@@ -20,14 +20,14 @@
 #define FAT32_BAD 0x0ffffff7u
 
 #define FAT32_SECTOR 512u
-#define FAT32_DATE 0x5c21u /* 2026-01-01，无 RTC 时的固定时间戳 */
+#define FAT32_DATE 0x5c21u /* 固定时间戳 2026-01-01 */
 #define FAT32_TIME 0x0000u
 
 #define FAT32_OK 0
 #define FAT32_ERR_IO (-100)
 #define FAT32_ERR_EOF (-101)
 
-/* ===== 小端读写（避免非对齐访问） ===== */
+/* 小端读写 */
 static uint16_t rd16(const uint8_t *p)
 {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -52,31 +52,31 @@ static void wr32(uint8_t *p, uint32_t v)
     p[3] = (uint8_t)((v >> 24) & 0xff);
 }
 
-/* ===== 超级块 ===== */
+/* 超级块 */
 typedef struct fat32_sb
 {
     spinlock_t lock;
-    vdev_t *dev;            /* 挂载的块设备（整盘 hdN 或分区 hdNpM，512 字节/块） */
-    uint32_t base_lba;      /* 卷在设备内的起始扇区（分区设备为 0，整盘 MBR 首 FAT32 分区为分区起始） */
+    vdev_t *dev;            /* 挂载的块设备，512 字节每块 */
+    uint32_t base_lba;      /* 卷起始扇区 */
     uint32_t sec_per_clus;  /* 每簇扇区数 */
     uint32_t reserved_secs; /* 保留扇区数 */
     uint32_t num_fats;
     uint32_t total_secs;
-    uint32_t fat_secs; /* 单个 FAT 占用扇区数 */
+    uint32_t fat_secs; /* 单 FAT 扇区数 */
     uint32_t root_clus;
     uint16_t fs_info_sec;
     uint8_t active_fat;
-    uint8_t mirror; /* 1=所有 FAT 同步写 */
+    uint8_t mirror; /* 多 FAT 同步写标志 */
     uint32_t fat_start_lba;
-    uint32_t data_start_lba; /* 2 号簇所在扇区 */
+    uint32_t data_start_lba; /* 数据区起始扇区 */
     uint32_t cluster_count;
     uint32_t clus_bytes;
-    uint32_t next_free; /* FSInfo 下一个空闲簇提示 */
+    uint32_t next_free; /* 空闲簇提示 */
     uint32_t free_count;
     int free_known;
 } fat32_sb_t;
 
-/* 簇链游标：带一层“已走到第 index 簇”的缓存，顺序读写 O(1) 前进 */
+/* 簇链游标，带一层缓存 */
 typedef struct fat32_chain
 {
     fat32_sb_t *sb;
@@ -86,14 +86,14 @@ typedef struct fat32_chain
     int cache_ok;
 } fat32_chain_t;
 
-/* 定位到的目录项（含短名项与前导 LFN 项） */
+/* 定位到的目录项 */
 typedef struct fat32_loc
 {
     int found;
-    uint32_t dir_clus; /* 所在目录的首簇 */
-    uint32_t off;      /* 短名项在目录数据中的字节偏移 */
-    uint32_t lfn_off;  /* 第一个 LFN 项的字节偏移（无 LFN 时等于 off） */
-    uint32_t clus;     /* 文件/目录首簇 */
+    uint32_t dir_clus; /* 所在目录首簇 */
+    uint32_t off;      /* 短名项字节偏移 */
+    uint32_t lfn_off;  /* 首个长名项偏移 */
+    uint32_t clus;     /* 文件首簇 */
     uint32_t size;
     uint8_t attr;
     char name[VFS_NAME_MAX];
@@ -105,7 +105,7 @@ typedef struct fat32_file
     fat32_chain_t chain;
     uint32_t size;
     uint32_t dir_clus; /* 目录项所在目录 */
-    uint32_t dir_off;  /* 短名项字节偏移，写回 size/首簇用 */
+    uint32_t dir_off;  /* 短名项偏移 */
     int is_dir;
 } fat32_file_t;
 
@@ -123,7 +123,7 @@ static void fat32_free_chain(fat32_sb_t *sb, uint32_t first);
 static uint32_t fat32_chain_count(fat32_chain_t *ch);
 static int fat32_chain_at2(fat32_chain_t *ch, uint32_t index, uint32_t *out);
 
-/* ===== 设备 IO（扇区号均相对卷首，经 base_lba 换算为设备 LBA） ===== */
+/* 设备 IO，扇区号相对卷首 */
 static int fat32_read_sec(fat32_sb_t *sb, uint32_t lba, void *buf)
 {
     if (!sb->dev || !sb->dev->bops || !sb->dev->bops->read_blocks)
@@ -148,7 +148,7 @@ static int fat32_clus_valid(fat32_sb_t *sb, uint32_t c)
     return c >= 2 && c <= sb->cluster_count + 1;
 }
 
-/* ===== FAT 表项 ===== */
+/* FAT 表项 */
 static uint32_t fat32_fat_get(fat32_sb_t *sb, uint32_t clus)
 {
     uint8_t sec[FAT32_SECTOR];
@@ -188,7 +188,7 @@ static int fat32_fat_set(fat32_sb_t *sb, uint32_t clus, uint32_t val)
     return FAT32_OK;
 }
 
-/* ===== FSInfo / 簇分配 ===== */
+/* 空闲簇分配 */
 static int fat32_fs_info_write(fat32_sb_t *sb)
 {
     uint8_t sec[FAT32_SECTOR];
@@ -198,13 +198,13 @@ static int fat32_fs_info_write(fat32_sb_t *sb)
     if (fat32_read_sec(sb, sb->fs_info_sec, sec) != 0)
         return FAT32_ERR_IO;
     if (rd32(sec) != 0x41615252u || rd32(sec + 484) != 0x61417272u)
-        return FAT32_OK; /* 无有效 FSInfo，跳过 */
+        return FAT32_OK; /* 无有效信息则跳过 */
     if (sb->free_known)
         wr32(sec + 488, sb->free_count);
     wr32(sec + 492, sb->next_free);
     if (fat32_write_sec(sb, sb->fs_info_sec, sec) != 0)
         return FAT32_ERR_IO;
-    if (sb->fs_info_sec == 1) /* 备份 FSInfo 固定在第 7 扇区 */
+    if (sb->fs_info_sec == 1) /* 备份信息在第 7 扇区 */
         fat32_write_sec(sb, 7, sec);
     return FAT32_OK;
 }
@@ -249,7 +249,7 @@ static uint32_t fat32_alloc_cluster(fat32_sb_t *sb)
                 return c;
             }
         }
-        start = 2; /* 第二遍从卷首再扫，处理提示点之后无空簇的情况 */
+        start = 2; /* 第二遍从卷首重扫 */
     }
     return 0;
 }
@@ -274,7 +274,7 @@ static void fat32_free_chain(fat32_sb_t *sb, uint32_t first)
     fat32_fs_info_write(sb);
 }
 
-/* ===== 簇链 ===== */
+/* 簇链 */
 static void fat32_chain_init(fat32_chain_t *ch, fat32_sb_t *sb, uint32_t start)
 {
     ch->sb = sb;
@@ -387,7 +387,7 @@ static int fat32_chain_write(fat32_chain_t *ch, uint64_t off, const void *buf, u
 
         if (!fat32_clus_valid(sb, clus))
         {
-            /* 需要新簇：追加到链尾 */
+            /* 追加新簇到链尾 */
             uint32_t nc = fat32_alloc_cluster(sb);
             if (!fat32_clus_valid(sb, nc))
                 return VFS_ERR_NOSPC;
@@ -438,7 +438,7 @@ static int fat32_chain_write(fat32_chain_t *ch, uint64_t off, const void *buf, u
     return FAT32_OK;
 }
 
-/* ===== 目录项读写 ===== */
+/* 目录项读写 */
 static int fat32_ent_read(fat32_sb_t *sb, fat32_chain_t *ch, uint32_t index,
                           uint8_t out[32], uint32_t *off_out)
 {
@@ -491,7 +491,7 @@ static int fat32_ent_write_direct(fat32_sb_t *sb, uint32_t dir_clus, uint32_t in
     return fat32_ent_write(sb, &ch, index, entry);
 }
 
-/* ===== 名字处理 ===== */
+/* 名字处理 */
 static uint8_t fat32_upper(uint8_t c)
 {
     return (c >= 'a' && c <= 'z') ? (uint8_t)(c - 32) : c;
@@ -539,7 +539,7 @@ static uint8_t fat32_short_sum(const uint8_t entry[32])
     return sum;
 }
 
-/* LFN 项的 13 个 UTF-16 码元偏移 */
+/* 长名项码元偏移表 */
 static const uint8_t g_lfn_off[13] = {1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30};
 
 static void fat32_lfn_store(uint16_t *units, uint32_t seq, const uint8_t *e)
@@ -608,7 +608,7 @@ static void fat32_short_name(const uint8_t *e, char *out, uint32_t outsz)
     out[j] = '\0';
 }
 
-/* ===== 目录查找 / 路径解析 ===== */
+/* 目录查找与路径解析 */
 static int fat32_dir_lookup(fat32_sb_t *sb, uint32_t dir_clus, const char *name, fat32_loc_t *out)
 {
     fat32_chain_t ch;
@@ -785,7 +785,7 @@ static int fat32_resolve(fat32_sb_t *sb, const char *rel, fat32_loc_t *out)
     return FAT32_OK;
 }
 
-/* ===== 新建目录项 ===== */
+/* 新建目录项 */
 static int fat32_short_exists(fat32_sb_t *sb, uint32_t dir_clus, const uint8_t raw[11])
 {
     fat32_chain_t ch;
@@ -810,7 +810,7 @@ static int fat32_short_exists(fat32_sb_t *sb, uint32_t dir_clus, const uint8_t r
     return 0;
 }
 
-/* 生成 8.3 短名；name 含小写或过长/含非法字符时置 need_lfn */
+/* 生成 8.3 短名，不合规则则用长名 */
 static int fat32_make_short(fat32_sb_t *sb, uint32_t dir_clus, const char *name,
                             uint8_t raw[11], uint8_t *nt_res, int *need_lfn)
 {
@@ -865,7 +865,7 @@ static int fat32_make_short(fat32_sb_t *sb, uint32_t dir_clus, const char *name,
             raw[8 + i] = fat32_upper((uint8_t)ext[i]);
         if (!fat32_short_exists(sb, dir_clus, raw))
             return FAT32_OK;
-        /* 名字冲突则退化为 ~n */
+        /* 冲突则用波浪线后缀 */
     }
 
     {
@@ -1178,7 +1178,7 @@ static int fat32_dir_is_empty(fat32_sb_t *sb, uint32_t clus)
         if (e[11] & FAT32_ATTR_VOL)
             continue;
         if (e[0] == '.')
-            continue; /* "." 与 ".." */
+            continue; /* 跳过点目录 */
         return 0;
     }
     return 1;
@@ -1230,7 +1230,7 @@ static void fat32_truncate(fat32_sb_t *sb, fat32_loc_t *loc, fat32_file_t *ff)
     }
 }
 
-/* ===== 引导扇区识别 ===== */
+/* 引导扇区识别 */
 static int fat32_is_dbr(const uint8_t *sec)
 {
     uint16_t bps = rd16(sec + 11);
@@ -1240,14 +1240,14 @@ static int fat32_is_dbr(const uint8_t *sec)
     if (rd16(sec + 510) != 0xaa55)
         return 0;
     if (bps != 512)
-        return 0; /* 驱动固定按 512 字节扇区工作 */
+        return 0; /* 仅支持 512 字节扇区 */
     if (spc == 0 || (spc & (spc - 1)))
         return 0;
     if (sec[16] == 0)
         return 0;
-    if (rd16(sec + 17) != 0) /* FAT32 根目录项数必须为 0 */
+    if (rd16(sec + 17) != 0) /* 根目录项数须为 0 */
         return 0;
-    if (rd16(sec + 22) != 0) /* FAT32 FAT16 大小必须为 0 */
+    if (rd16(sec + 22) != 0) /* FAT16 大小须为 0 */
         return 0;
     if (rd32(sec + 36) == 0)
         return 0;
@@ -1526,7 +1526,7 @@ static int64_t fat32_write(vfs_file_t *f, const void *buf, uint64_t len)
 
     irq = spin_lock_irqsave(&sb->lock);
 
-    /* seek 越过 EOF 的空洞按 0 填充 */
+    /* 空洞按 0 填充 */
     if (f->pos > ff->size)
     {
         uint64_t gap = f->pos - ff->size;
@@ -1779,7 +1779,7 @@ static int fat32_readdir(vfs_dir_t *d, vfs_dirent_t *out)
         lfn_max = 0;
 
         if (disp[0] == '.')
-            continue; /* 跳过 "." 与 ".." */
+            continue; /* 跳过点目录 */
 
         kernel_strncpy(out->name, disp, sizeof(out->name));
         out->is_dir = (attr & FAT32_ATTR_DIR) ? 1 : 0;

@@ -7,71 +7,62 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 
 **/
-/*-
- * Copyright (c) 1998 John D. Polstra.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- *
- * $FreeBSD: src/sys/sys/elf_common.h,v 1.15.8.2 2007/12/03 21:30:36 marius Exp $
- */
+/* Copyright (c) 1998 John D. Polstra. */
+/* All rights reserved. */
+
+/* Redistribution and use in source and binary forms, with or without */
+/* modification, are permitted provided that the following conditions */
+/* are met: */
+/* 1. Redistributions of source code must retain the above copyright */
+/* notice, this list of conditions and the following disclaimer. */
+/* 2. Redistributions in binary form must reproduce the above copyright */
+/* notice, this list of conditions and the following disclaimer in the */
+/* documentation and/or other materials provided with the distribution. */
+
+/* THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND */
+/* ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE */
+/* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE */
+/* ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE */
+/* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL */
+/* DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS */
+/* OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) */
+/* HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT */
+/* LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY */
+/* OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF */
+/* SUCH DAMAGE. */
+
+/* $FreeBSD: src/sys/sys/elf_common.h,v 1.15.8.2 2007/12/03 21:30:36 marius Exp $ */
 
 #ifndef _SYS_ELF_COMMON_H_
 #define _SYS_ELF_COMMON_H_  1
 
 #include <Base.h>
 
-/*
- * ELF definitions that are independent of architecture or word size.
- */
+/* ELF definitions that are independent of architecture or word size. */
 
-/*
- * Note header.  The ".note" section contains an array of notes.  Each
- * begins with this header, aligned to a word boundary.  Immediately
- * following the note header is n_namesz bytes of name, padded to the
- * next word boundary.  Then comes n_descsz bytes of descriptor, again
- * padded to a word boundary.  The values of n_namesz and n_descsz do
- * not include the padding.
- */
+/* Note header. */
+/* Name and descriptor follow, both word-aligned. */
+/* The values of n_namesz and n_descsz do not include the padding. */
 
 typedef struct {
   UINT32    n_namesz; /* Length of name. */
   UINT32    n_descsz; /* Length of descriptor. */
-  UINT32    n_type;   /* Type of this note. */
+  UINT32    n_type; /* Type of this note. */
 } Elf_Note;
 
-/* Indexes into the e_ident array.  Keep synced with
-   http://www.sco.com/developers/gabi/latest/ch4.eheader.html */
-#define EI_MAG0        0  /* Magic number, byte 0. */
-#define EI_MAG1        1  /* Magic number, byte 1. */
-#define EI_MAG2        2  /* Magic number, byte 2. */
-#define EI_MAG3        3  /* Magic number, byte 3. */
-#define EI_CLASS       4  /* Class of machine. */
-#define EI_DATA        5  /* Data format. */
-#define EI_VERSION     6  /* ELF format version. */
-#define EI_OSABI       7  /* Operating system / ABI identification */
-#define EI_ABIVERSION  8  /* ABI version */
-#define OLD_EI_BRAND   8  /* Start of architecture identification. */
-#define EI_PAD         9  /* Start of padding (per SVR4 ABI). */
+/* Indexes into the e_ident array. */
+/* Keep synced with http://www.sco.com/developers/gabi/latest/ch4.eheader.html */
+#define EI_MAG0        0 /* Magic number, byte 0. */
+#define EI_MAG1        1 /* Magic number, byte 1. */
+#define EI_MAG2        2 /* Magic number, byte 2. */
+#define EI_MAG3        3 /* Magic number, byte 3. */
+#define EI_CLASS       4 /* Class of machine. */
+#define EI_DATA        5 /* Data format. */
+#define EI_VERSION     6 /* ELF format version. */
+#define EI_OSABI       7 /* Operating system / ABI identification */
+#define EI_ABIVERSION  8 /* ABI version */
+#define OLD_EI_BRAND   8 /* Start of architecture identification. */
+#define EI_PAD         9 /* Start of padding (per SVR4 ABI). */
 #define EI_NIDENT      16 /* Size of e_ident array. */
 
 /* Values for the magic number bytes. */
@@ -80,7 +71,7 @@ typedef struct {
 #define ELFMAG2  'L'
 #define ELFMAG3  'F'
 #define ELFMAG   "\177ELF" /* magic string */
-#define SELFMAG  4         /* magic string size */
+#define SELFMAG  4 /* magic string size */
 
 /* Values for e_ident[EI_VERSION] and e_version. */
 #define EV_NONE     0
@@ -92,31 +83,31 @@ typedef struct {
 #define ELFCLASS64    2 /* 64-bit architecture. */
 
 /* Values for e_ident[EI_DATA]. */
-#define ELFDATANONE  0  /* Unknown data format. */
-#define ELFDATA2LSB  1  /* 2's complement little-endian. */
-#define ELFDATA2MSB  2  /* 2's complement big-endian. */
+#define ELFDATANONE  0 /* Unknown data format. */
+#define ELFDATA2LSB  1 /* 2's complement little-endian. */
+#define ELFDATA2MSB  2 /* 2's complement big-endian. */
 
 /* Values for e_ident[EI_OSABI]. */
-#define ELFOSABI_NONE        0   /* UNIX System V ABI */
-#define ELFOSABI_HPUX        1   /* HP-UX operating system */
-#define ELFOSABI_NETBSD      2   /* NetBSD */
-#define ELFOSABI_LINUX       3   /* GNU/Linux */
-#define ELFOSABI_HURD        4   /* GNU/Hurd */
-#define ELFOSABI_86OPEN      5   /* 86Open common IA32 ABI */
-#define ELFOSABI_SOLARIS     6   /* Solaris */
-#define ELFOSABI_AIX         7   /* AIX */
-#define ELFOSABI_IRIX        8   /* IRIX */
-#define ELFOSABI_FREEBSD     9   /* FreeBSD */
-#define ELFOSABI_TRU64       10  /* TRU64 UNIX */
-#define ELFOSABI_MODESTO     11  /* Novell Modesto */
-#define ELFOSABI_OPENBSD     12  /* OpenBSD */
-#define ELFOSABI_OPENVMS     13  /* Open VMS */
-#define ELFOSABI_NSK         14  /* HP Non-Stop Kernel */
-#define ELFOSABI_ARM         97  /* ARM */
+#define ELFOSABI_NONE        0 /* UNIX System V ABI */
+#define ELFOSABI_HPUX        1 /* HP-UX operating system */
+#define ELFOSABI_NETBSD      2 /* NetBSD */
+#define ELFOSABI_LINUX       3 /* GNU/Linux */
+#define ELFOSABI_HURD        4 /* GNU/Hurd */
+#define ELFOSABI_86OPEN      5 /* 86Open common IA32 ABI */
+#define ELFOSABI_SOLARIS     6 /* Solaris */
+#define ELFOSABI_AIX         7 /* AIX */
+#define ELFOSABI_IRIX        8 /* IRIX */
+#define ELFOSABI_FREEBSD     9 /* FreeBSD */
+#define ELFOSABI_TRU64       10 /* TRU64 UNIX */
+#define ELFOSABI_MODESTO     11 /* Novell Modesto */
+#define ELFOSABI_OPENBSD     12 /* OpenBSD */
+#define ELFOSABI_OPENVMS     13 /* Open VMS */
+#define ELFOSABI_NSK         14 /* HP Non-Stop Kernel */
+#define ELFOSABI_ARM         97 /* ARM */
 #define ELFOSABI_STANDALONE  255 /* Standalone (embedded) application */
 
 #define ELFOSABI_SYSV      ELFOSABI_NONE /* symbol used in old spec */
-#define ELFOSABI_MONTEREY  ELFOSABI_AIX  /* Monterey */
+#define ELFOSABI_MONTEREY  ELFOSABI_AIX /* Monterey */
 
 /* e_ident */
 #define IS_ELF(ehdr)  ((ehdr).e_ident[EI_MAG0] == ELFMAG0 && \
@@ -125,70 +116,70 @@ typedef struct {
        (ehdr).e_ident[EI_MAG3] == ELFMAG3)
 
 /* Values for e_type. */
-#define ET_NONE    0      /* Unknown type. */
-#define ET_REL     1      /* Relocatable. */
-#define ET_EXEC    2      /* Executable. */
-#define ET_DYN     3      /* Shared object. */
-#define ET_CORE    4      /* Core file. */
+#define ET_NONE    0 /* Unknown type. */
+#define ET_REL     1 /* Relocatable. */
+#define ET_EXEC    2 /* Executable. */
+#define ET_DYN     3 /* Shared object. */
+#define ET_CORE    4 /* Core file. */
 #define ET_LOOS    0xfe00 /* First operating system specific. */
 #define ET_HIOS    0xfeff /* Last operating system-specific. */
 #define ET_LOPROC  0xff00 /* First processor-specific. */
 #define ET_HIPROC  0xffff /* Last processor-specific. */
 
 /* Values for e_machine. */
-#define EM_NONE         0         /* Unknown machine. */
-#define EM_M32          1         /* AT&T WE32100. */
-#define EM_SPARC        2         /* Sun SPARC. */
-#define EM_386          3         /* Intel i386. */
-#define EM_68K          4         /* Motorola 68000. */
-#define EM_88K          5         /* Motorola 88000. */
-#define EM_860          7         /* Intel i860. */
-#define EM_MIPS         8         /* MIPS R3000 Big-Endian only. */
-#define EM_S370         9         /* IBM System/370. */
-#define EM_MIPS_RS3_LE  10        /* MIPS R3000 Little-Endian. */
-#define EM_PARISC       15        /* HP PA-RISC. */
-#define EM_VPP500       17        /* Fujitsu VPP500. */
-#define EM_SPARC32PLUS  18        /* SPARC v8plus. */
-#define EM_960          19        /* Intel 80960. */
-#define EM_PPC          20        /* PowerPC 32-bit. */
-#define EM_PPC64        21        /* PowerPC 64-bit. */
-#define EM_S390         22        /* IBM System/390. */
-#define EM_V800         36        /* NEC V800. */
-#define EM_FR20         37        /* Fujitsu FR20. */
-#define EM_RH32         38        /* TRW RH-32. */
-#define EM_RCE          39        /* Motorola RCE. */
-#define EM_ARM          40        /* ARM. */
-#define EM_SH           42        /* Hitachi SH. */
-#define EM_SPARCV9      43        /* SPARC v9 64-bit. */
-#define EM_TRICORE      44        /* Siemens TriCore embedded processor. */
-#define EM_ARC          45        /* Argonaut RISC Core. */
-#define EM_H8_300       46        /* Hitachi H8/300. */
-#define EM_H8_300H      47        /* Hitachi H8/300H. */
-#define EM_H8S          48        /* Hitachi H8S. */
-#define EM_H8_500       49        /* Hitachi H8/500. */
-#define EM_MIPS_X       51        /* Stanford MIPS-X. */
-#define EM_COLDFIRE     52        /* Motorola ColdFire. */
-#define EM_68HC12       53        /* Motorola M68HC12. */
-#define EM_MMA          54        /* Fujitsu MMA. */
-#define EM_PCP          55        /* Siemens PCP. */
-#define EM_NCPU         56        /* Sony nCPU. */
-#define EM_NDR1         57        /* Denso NDR1 microprocessor. */
-#define EM_STARCORE     58        /* Motorola Star*Core processor. */
-#define EM_ME16         59        /* Toyota ME16 processor. */
-#define EM_ST100        60        /* STMicroelectronics ST100 processor. */
-#define EM_TINYJ        61        /* Advanced Logic Corp. TinyJ processor. */
-#define EM_X86_64       62        /* Advanced Micro Devices x86-64 */
+#define EM_NONE         0 /* Unknown machine. */
+#define EM_M32          1 /* AT&T WE32100. */
+#define EM_SPARC        2 /* Sun SPARC. */
+#define EM_386          3 /* Intel i386. */
+#define EM_68K          4 /* Motorola 68000. */
+#define EM_88K          5 /* Motorola 88000. */
+#define EM_860          7 /* Intel i860. */
+#define EM_MIPS         8 /* MIPS R3000 Big-Endian only. */
+#define EM_S370         9 /* IBM System/370. */
+#define EM_MIPS_RS3_LE  10 /* MIPS R3000 Little-Endian. */
+#define EM_PARISC       15 /* HP PA-RISC. */
+#define EM_VPP500       17 /* Fujitsu VPP500. */
+#define EM_SPARC32PLUS  18 /* SPARC v8plus. */
+#define EM_960          19 /* Intel 80960. */
+#define EM_PPC          20 /* PowerPC 32-bit. */
+#define EM_PPC64        21 /* PowerPC 64-bit. */
+#define EM_S390         22 /* IBM System/390. */
+#define EM_V800         36 /* NEC V800. */
+#define EM_FR20         37 /* Fujitsu FR20. */
+#define EM_RH32         38 /* TRW RH-32. */
+#define EM_RCE          39 /* Motorola RCE. */
+#define EM_ARM          40 /* ARM. */
+#define EM_SH           42 /* Hitachi SH. */
+#define EM_SPARCV9      43 /* SPARC v9 64-bit. */
+#define EM_TRICORE      44 /* Siemens TriCore embedded processor. */
+#define EM_ARC          45 /* Argonaut RISC Core. */
+#define EM_H8_300       46 /* Hitachi H8/300. */
+#define EM_H8_300H      47 /* Hitachi H8/300H. */
+#define EM_H8S          48 /* Hitachi H8S. */
+#define EM_H8_500       49 /* Hitachi H8/500. */
+#define EM_MIPS_X       51 /* Stanford MIPS-X. */
+#define EM_COLDFIRE     52 /* Motorola ColdFire. */
+#define EM_68HC12       53 /* Motorola M68HC12. */
+#define EM_MMA          54 /* Fujitsu MMA. */
+#define EM_PCP          55 /* Siemens PCP. */
+#define EM_NCPU         56 /* Sony nCPU. */
+#define EM_NDR1         57 /* Denso NDR1 microprocessor. */
+#define EM_STARCORE     58 /* Motorola Star*Core processor. */
+#define EM_ME16         59 /* Toyota ME16 processor. */
+#define EM_ST100        60 /* STMicroelectronics ST100 processor. */
+#define EM_TINYJ        61 /* Advanced Logic Corp. TinyJ processor. */
+#define EM_X86_64       62 /* Advanced Micro Devices x86-64 */
 #define  EM_AMD64       EM_X86_64 /* Advanced Micro Devices x86-64 (compat) */
-#define EM_AARCH64      183       /* ARM 64bit Architecture */
+#define EM_AARCH64      183 /* ARM 64bit Architecture */
 
 /* Non-standard or deprecated. */
-#define EM_486          6      /* Intel i486. */
-#define EM_MIPS_RS4_BE  10     /* MIPS R4000 Big-Endian */
-#define EM_ALPHA_STD    41     /* Digital Alpha (standard value). */
+#define EM_486          6 /* Intel i486. */
+#define EM_MIPS_RS4_BE  10 /* MIPS R4000 Big-Endian */
+#define EM_ALPHA_STD    41 /* Digital Alpha (standard value). */
 #define EM_ALPHA        0x9026 /* Alpha (written in the absence of an ABI) */
 
 /* Special section indexes. */
-#define SHN_UNDEF      0      /* Undefined, missing, irrelevant. */
+#define SHN_UNDEF      0 /* Undefined, missing, irrelevant. */
 #define SHN_LORESERVE  0xff00 /* First of reserved range. */
 #define SHN_LOPROC     0xff00 /* First processor-specific. */
 #define SHN_HIPROC     0xff1f /* Last processor-specific. */
@@ -200,23 +191,23 @@ typedef struct {
 #define SHN_HIRESERVE  0xffff /* Last of reserved range. */
 
 /* sh_type */
-#define SHT_NULL            0          /* inactive */
-#define SHT_PROGBITS        1          /* program defined information */
-#define SHT_SYMTAB          2          /* symbol table section */
-#define SHT_STRTAB          3          /* string table section */
-#define SHT_RELA            4          /* relocation section with addends */
-#define SHT_HASH            5          /* symbol hash table section */
-#define SHT_DYNAMIC         6          /* dynamic section */
-#define SHT_NOTE            7          /* note section */
-#define SHT_NOBITS          8          /* no space section */
-#define SHT_REL             9          /* relocation section - no addends */
-#define SHT_SHLIB           10         /* reserved - purpose unknown */
-#define SHT_DYNSYM          11         /* dynamic symbol table section */
-#define SHT_INIT_ARRAY      14         /* Initialization function pointers. */
-#define SHT_FINI_ARRAY      15         /* Termination function pointers. */
-#define SHT_PREINIT_ARRAY   16         /* Pre-initialization function ptrs. */
-#define SHT_GROUP           17         /* Section group. */
-#define SHT_SYMTAB_SHNDX    18         /* Section indexes (see SHN_XINDEX). */
+#define SHT_NULL            0 /* inactive */
+#define SHT_PROGBITS        1 /* program defined information */
+#define SHT_SYMTAB          2 /* symbol table section */
+#define SHT_STRTAB          3 /* string table section */
+#define SHT_RELA            4 /* relocation section with addends */
+#define SHT_HASH            5 /* symbol hash table section */
+#define SHT_DYNAMIC         6 /* dynamic section */
+#define SHT_NOTE            7 /* note section */
+#define SHT_NOBITS          8 /* no space section */
+#define SHT_REL             9 /* relocation section - no addends */
+#define SHT_SHLIB           10 /* reserved - purpose unknown */
+#define SHT_DYNSYM          11 /* dynamic symbol table section */
+#define SHT_INIT_ARRAY      14 /* Initialization function pointers. */
+#define SHT_FINI_ARRAY      15 /* Termination function pointers. */
+#define SHT_PREINIT_ARRAY   16 /* Pre-initialization function ptrs. */
+#define SHT_GROUP           17 /* Section group. */
+#define SHT_SYMTAB_SHNDX    18 /* Section indexes (see SHN_XINDEX). */
 #define SHT_LOOS            0x60000000 /* First of OS specific semantics */
 #define SHT_LOSUNW          0x6ffffff4
 #define SHT_SUNW_dof        0x6ffffff4
@@ -229,11 +220,11 @@ typedef struct {
 #define SHT_SUNW_COMDAT     0x6ffffffb
 #define SHT_SUNW_syminfo    0x6ffffffc
 #define SHT_SUNW_verdef     0x6ffffffd
-#define SHT_GNU_verdef      0x6ffffffd/* Symbol versions provided */
+#define SHT_GNU_verdef      0x6ffffffd /* Symbol versions provided */
 #define SHT_SUNW_verneed    0x6ffffffe
 #define SHT_GNU_verneed     0x6ffffffe /* Symbol versions required */
 #define SHT_SUNW_versym     0x6fffffff
-#define SHT_GNU_versym      0x6fffffff/* Symbol version table */
+#define SHT_GNU_versym      0x6fffffff /* Symbol version table */
 #define SHT_HISUNW          0x6fffffff
 #define SHT_HIOS            0x6fffffff /* Last of OS specific semantics */
 #define SHT_LOPROC          0x70000000 /* reserved range for processor */
@@ -243,28 +234,28 @@ typedef struct {
 #define SHT_HIUSER          0xffffffff /* specific indexes */
 
 /* Flags for sh_flags. */
-#define SHF_WRITE             0x1        /* Section contains writable data. */
-#define SHF_ALLOC             0x2        /* Section occupies memory. */
-#define SHF_EXECINSTR         0x4        /* Section contains instructions. */
-#define SHF_MERGE             0x10       /* Section may be merged. */
-#define SHF_STRINGS           0x20       /* Section contains strings. */
-#define SHF_INFO_LINK         0x40       /* sh_info holds section index. */
-#define SHF_LINK_ORDER        0x80       /* Special ordering requirements. */
-#define SHF_OS_NONCONFORMING  0x100      /* OS-specific processing required. */
-#define SHF_GROUP             0x200      /* Member of section group. */
-#define SHF_TLS               0x400      /* Section contains TLS data. */
+#define SHF_WRITE             0x1 /* Section contains writable data. */
+#define SHF_ALLOC             0x2 /* Section occupies memory. */
+#define SHF_EXECINSTR         0x4 /* Section contains instructions. */
+#define SHF_MERGE             0x10 /* Section may be merged. */
+#define SHF_STRINGS           0x20 /* Section contains strings. */
+#define SHF_INFO_LINK         0x40 /* sh_info holds section index. */
+#define SHF_LINK_ORDER        0x80 /* Special ordering requirements. */
+#define SHF_OS_NONCONFORMING  0x100 /* OS-specific processing required. */
+#define SHF_GROUP             0x200 /* Member of section group. */
+#define SHF_TLS               0x400 /* Section contains TLS data. */
 #define SHF_MASKOS            0x0ff00000 /* OS-specific semantics. */
 #define SHF_MASKPROC          0xf0000000 /* Processor-specific semantics. */
 
 /* Values for p_type. */
-#define PT_NULL           0          /* Unused entry. */
-#define PT_LOAD           1          /* Loadable segment. */
-#define PT_DYNAMIC        2          /* Dynamic linking information segment. */
-#define PT_INTERP         3          /* Pathname of interpreter. */
-#define PT_NOTE           4          /* Auxiliary information. */
-#define PT_SHLIB          5          /* Reserved (not used). */
-#define PT_PHDR           6          /* Location of program header itself. */
-#define  PT_TLS           7          /* Thread local storage segment */
+#define PT_NULL           0 /* Unused entry. */
+#define PT_LOAD           1 /* Loadable segment. */
+#define PT_DYNAMIC        2 /* Dynamic linking information segment. */
+#define PT_INTERP         3 /* Pathname of interpreter. */
+#define PT_NOTE           4 /* Auxiliary information. */
+#define PT_SHLIB          5 /* Reserved (not used). */
+#define PT_PHDR           6 /* Location of program header itself. */
+#define  PT_TLS           7 /* Thread local storage segment */
 #define PT_LOOS           0x60000000 /* First OS-specific. */
 #define  PT_SUNW_UNWIND   0x6464e550 /* amd64 UNWIND program header */
 #define  PT_GNU_EH_FRAME  0x6474e550
@@ -279,9 +270,9 @@ typedef struct {
 #define PT_HIPROC         0x7fffffff /* Last processor-specific type. */
 
 /* Values for p_flags. */
-#define PF_X         0x1        /* Executable. */
-#define PF_W         0x2        /* Writable. */
-#define PF_R         0x4        /* Readable. */
+#define PF_X         0x1 /* Executable. */
+#define PF_W         0x2 /* Writable. */
+#define PF_R         0x4 /* Readable. */
 #define PF_MASKOS    0x0ff00000 /* Operating system-specific. */
 #define PF_MASKPROC  0xf0000000 /* Processor-specific. */
 
@@ -289,55 +280,41 @@ typedef struct {
 #define  PN_XNUM  0xffff
 
 /* Values for d_tag. */
-#define DT_NULL              0          /* Terminating entry. */
-#define DT_NEEDED            1          /* String table offset of a needed shared
-           library. */
-#define DT_PLTRELSZ          2          /* Total size in bytes of PLT relocations. */
-#define DT_PLTGOT            3          /* Processor-dependent address. */
-#define DT_HASH              4          /* Address of symbol hash table. */
-#define DT_STRTAB            5          /* Address of string table. */
-#define DT_SYMTAB            6          /* Address of symbol table. */
-#define DT_RELA              7          /* Address of ElfNN_Rela relocations. */
-#define DT_RELASZ            8          /* Total size of ElfNN_Rela relocations. */
-#define DT_RELAENT           9          /* Size of each ElfNN_Rela relocation entry. */
-#define DT_STRSZ             10         /* Size of string table. */
-#define DT_SYMENT            11         /* Size of each symbol table entry. */
-#define DT_INIT              12         /* Address of initialization function. */
-#define DT_FINI              13         /* Address of finalization function. */
-#define DT_SONAME            14         /* String table offset of shared object
-           name. */
-#define DT_RPATH             15         /* String table offset of library path. [sup] */
-#define DT_SYMBOLIC          16         /* Indicates "symbolic" linking. [sup] */
-#define DT_REL               17         /* Address of ElfNN_Rel relocations. */
-#define DT_RELSZ             18         /* Total size of ElfNN_Rel relocations. */
-#define DT_RELENT            19         /* Size of each ElfNN_Rel relocation. */
-#define DT_PLTREL            20         /* Type of relocation used for PLT. */
-#define DT_DEBUG             21         /* Reserved (not used). */
-#define DT_TEXTREL           22         /* Indicates there may be relocations in
-           non-writable segments. [sup] */
-#define DT_JMPREL            23         /* Address of PLT relocations. */
-#define  DT_BIND_NOW         24         /* [sup] */
-#define  DT_INIT_ARRAY       25         /* Address of the array of pointers to
-           initialization functions */
-#define  DT_FINI_ARRAY       26         /* Address of the array of pointers to
-           termination functions */
-#define  DT_INIT_ARRAYSZ     27         /* Size in bytes of the array of
-           initialization functions. */
-#define  DT_FINI_ARRAYSZ     28         /* Size in bytes of the array of
-           terminationfunctions. */
-#define  DT_RUNPATH          29         /* String table offset of a null-terminated
-           library search path string. */
-#define  DT_FLAGS            30         /* Object specific flag values. */
-#define  DT_ENCODING         32         /* Values greater than or equal to DT_ENCODING
-           and less than DT_LOOS follow the rules for
-           the interpretation of the d_un union
-           as follows: even == 'd_ptr', even == 'd_val'
-           or none */
-#define  DT_PREINIT_ARRAY    32         /* Address of the array of pointers to
-           pre-initialization functions. */
-#define  DT_PREINIT_ARRAYSZ  33         /* Size in bytes of the array of
-           pre-initialization functions. */
-#define  DT_MAXPOSTAGS       34         /* number of positive tags */
+#define DT_NULL              0 /* Terminating entry. */
+#define DT_NEEDED            1 /* String table offset of a needed shared library. */
+#define DT_PLTRELSZ          2 /* Total size in bytes of PLT relocations. */
+#define DT_PLTGOT            3 /* Processor-dependent address. */
+#define DT_HASH              4 /* Address of symbol hash table. */
+#define DT_STRTAB            5 /* Address of string table. */
+#define DT_SYMTAB            6 /* Address of symbol table. */
+#define DT_RELA              7 /* Address of ElfNN_Rela relocations. */
+#define DT_RELASZ            8 /* Total size of ElfNN_Rela relocations. */
+#define DT_RELAENT           9 /* Size of each ElfNN_Rela relocation entry. */
+#define DT_STRSZ             10 /* Size of string table. */
+#define DT_SYMENT            11 /* Size of each symbol table entry. */
+#define DT_INIT              12 /* Address of initialization function. */
+#define DT_FINI              13 /* Address of finalization function. */
+#define DT_SONAME            14 /* String table offset of shared object name. */
+#define DT_RPATH             15 /* String table offset of library path. [sup] */
+#define DT_SYMBOLIC          16 /* Indicates "symbolic" linking. [sup] */
+#define DT_REL               17 /* Address of ElfNN_Rel relocations. */
+#define DT_RELSZ             18 /* Total size of ElfNN_Rel relocations. */
+#define DT_RELENT            19 /* Size of each ElfNN_Rel relocation. */
+#define DT_PLTREL            20 /* Type of relocation used for PLT. */
+#define DT_DEBUG             21 /* Reserved (not used). */
+#define DT_TEXTREL           22 /* Indicates there may be relocations in non-writable segments. [sup] */
+#define DT_JMPREL            23 /* Address of PLT relocations. */
+#define  DT_BIND_NOW         24 /* [sup] */
+#define  DT_INIT_ARRAY       25 /* Address of the array of pointers to initialization functions */
+#define  DT_FINI_ARRAY       26 /* Address of the array of pointers to termination functions */
+#define  DT_INIT_ARRAYSZ     27 /* Size in bytes of the array of initialization functions. */
+#define  DT_FINI_ARRAYSZ     28 /* Size in bytes of the array of terminationfunctions. */
+#define  DT_RUNPATH          29 /* String table offset of a null-terminated library search path string. */
+#define  DT_FLAGS            30 /* Object specific flag values. */
+#define  DT_ENCODING         32 /* Values greater than or equal to DT_ENCODING and less than DT_LOOS follow the rules for the interpretation of the d_un union as follows: even == 'd_ptr', even == 'd_val' or none */
+#define  DT_PREINIT_ARRAY    32 /* Address of the array of pointers to pre-initialization functions. */
+#define  DT_PREINIT_ARRAYSZ  33 /* Size in bytes of the array of pre-initialization functions. */
+#define  DT_MAXPOSTAGS       34 /* number of positive tags */
 #define  DT_LOOS             0x6000000d /* First OS-specific */
 #define  DT_SUNW_AUXILIARY   0x6000000d /* symbol auxiliary name */
 #define  DT_SUNW_RTLDINF     0x6000000e /* ld.so.1 info (private) */
@@ -345,30 +322,21 @@ typedef struct {
 #define  DT_SUNW_CAP         0x60000010 /* hardware/software */
 #define  DT_HIOS             0x6ffff000 /* Last OS-specific */
 
-/*
- * DT_* entries which fall between DT_VALRNGHI & DT_VALRNGLO use the
- * Dyn.d_un.d_val field of the Elf*_Dyn structure.
- */
+/* DT_* entries which fall between DT_VALRNGHI & DT_VALRNGLO use the Dyn.d_un.d_val field of the Elf*_Dyn structure. */
 #define  DT_VALRNGLO   0x6ffffd00
 #define  DT_CHECKSUM   0x6ffffdf8 /* elf checksum */
 #define  DT_PLTPADSZ   0x6ffffdf9 /* pltpadding size */
 #define  DT_MOVEENT    0x6ffffdfa /* move table entry size */
 #define  DT_MOVESZ     0x6ffffdfb /* move table size */
 #define  DT_FEATURE_1  0x6ffffdfc /* feature holder */
-#define  DT_POSFLAG_1  0x6ffffdfd /* flags for DT_* entries, effecting */
-/*  the following DT_* entry. */
-/*  See DF_P1_* definitions */
+#define  DT_POSFLAG_1  0x6ffffdfd /* flags for DT_* entries, effecting the following DT_* entry. */
+/* See DF_P1_* definitions */
 #define  DT_SYMINSZ   0x6ffffdfe /* syminfo table size (in bytes) */
 #define  DT_SYMINENT  0x6ffffdff /* syminfo entry size (in bytes) */
 #define  DT_VALRNGHI  0x6ffffdff
 
-/*
- * DT_* entries which fall between DT_ADDRRNGHI & DT_ADDRRNGLO use the
- * Dyn.d_un.d_ptr field of the Elf*_Dyn structure.
- *
- * If any adjustment is made to the ELF object after it has been
- * built, these entries will need to be adjusted.
- */
+/* DT_* entries which fall between DT_ADDRRNGHI & DT_ADDRRNGLO use the Dyn.d_un.d_ptr field of the Elf*_Dyn structure. */
+/* If any adjustment is made to the ELF object after it has been built, these entries will need to be adjusted. */
 #define  DT_ADDRRNGLO  0x6ffffe00
 #define  DT_CONFIG     0x6ffffefa /* configuration information */
 #define  DT_DEPAUDIT   0x6ffffefb /* dependency auditing */
@@ -387,7 +355,7 @@ typedef struct {
 #define  DT_VERNEED     0x6ffffffe /* Address of verneed section. */
 #define  DT_VERNEEDNUM  0x6fffffff /* Number of elems in verneed section */
 
-#define  DT_LOPROC                     0x70000000/* First processor-specific type. */
+#define  DT_LOPROC                     0x70000000 /* First processor-specific type. */
 #define  DT_DEPRECATED_SPARC_REGISTER  0x7000001
 #define  DT_AUXILIARY                  0x7ffffffd /* shared library auxiliary name */
 #define  DT_USED                       0x7ffffffe /* ignored - same as needed */
@@ -395,33 +363,25 @@ typedef struct {
 #define  DT_HIPROC                     0x7fffffff /* Last processor-specific type. */
 
 /* Values for DT_FLAGS */
-#define  DF_ORIGIN      0x0001 /* Indicates that the object being loaded may
-           make reference to the $ORIGIN substitution
-           string */
+#define  DF_ORIGIN      0x0001 /* Indicates that the object being loaded may make reference to the $ORIGIN substitution string */
 #define  DF_SYMBOLIC    0x0002 /* Indicates "symbolic" linking. */
-#define  DF_TEXTREL     0x0004 /* Indicates there may be relocations in
-           non-writable segments. */
-#define  DF_BIND_NOW    0x0008 /* Indicates that the dynamic linker should
-           process all relocations for the object
-           containing this entry before transferring
-           control to the program. */
-#define  DF_STATIC_TLS  0x0010 /* Indicates that the shared object or
-           executable contains code using a static
-           thread-local storage scheme. */
+#define  DF_TEXTREL     0x0004 /* Indicates there may be relocations in non-writable segments. */
+#define  DF_BIND_NOW    0x0008 /* Indicates that the dynamic linker should process all relocations for the object containing this entry before transferring control to the program. */
+#define  DF_STATIC_TLS  0x0010 /* Indicates that the shared object or executable contains code using a static thread-local storage scheme. */
 
-/* Values for n_type.  Used in core files. */
-#define NT_PRSTATUS  1  /* Process status. */
-#define NT_FPREGSET  2  /* Floating point registers. */
-#define NT_PRPSINFO  3  /* Process state info. */
+/* Values for n_type. Used in core files. */
+#define NT_PRSTATUS  1 /* Process status. */
+#define NT_FPREGSET  2 /* Floating point registers. */
+#define NT_PRPSINFO  3 /* Process state info. */
 
 /* Symbol Binding - ELFNN_ST_BIND - st_info */
-#define STB_LOCAL   0  /* Local symbol */
-#define STB_GLOBAL  1  /* Global symbol */
-#define STB_WEAK    2  /* like global - lower precedence */
+#define STB_LOCAL   0 /* Local symbol */
+#define STB_GLOBAL  1 /* Global symbol */
+#define STB_WEAK    2 /* like global - lower precedence */
 #define STB_LOOS    10 /* Reserved range for operating system */
-#define STB_HIOS    12 /*   specific semantics. */
+#define STB_HIOS    12 /* specific semantics. */
 #define STB_LOPROC  13 /* reserved range for processor */
-#define STB_HIPROC  15 /*   specific semantics. */
+#define STB_HIPROC  15 /* specific semantics. */
 
 /* Symbol type - ELFNN_ST_TYPE - st_info */
 #define STT_NOTYPE   0 /* Unspecified type. */
@@ -433,9 +393,9 @@ typedef struct {
 #define STT_TLS      6 /* TLS object. */
 #define STT_NUM      7
 #define STT_LOOS     10 /* Reserved range for operating system */
-#define STT_HIOS     12 /*   specific semantics. */
+#define STT_HIOS     12 /* specific semantics. */
 #define STT_LOPROC   13 /* reserved range for processor */
-#define STT_HIPROC   15 /*   specific semantics. */
+#define STT_HIPROC   15 /* specific semantics. */
 
 /* Symbol visibility - ELFNN_ST_VISIBILITY - st_other */
 #define STV_DEFAULT    0x0 /* Default visibility (see binding). */
@@ -444,7 +404,7 @@ typedef struct {
 #define STV_PROTECTED  0x3 /* Visible but not preemptible. */
 
 /* Special symbol table indexes. */
-#define STN_UNDEF  0  /* Undefined symbol index. */
+#define STN_UNDEF  0 /* Undefined symbol index. */
 
 /* Symbol versioning flags. */
 #define  VER_DEF_CURRENT  1
@@ -466,58 +426,44 @@ typedef struct {
 #define VER_NDX(x)  ((x) & ~(1u << 15))
 
 #define  CA_SUNW_NULL  0
-#define  CA_SUNW_HW_1  1    /* first hardware capabilities entry */
-#define  CA_SUNW_SF_1  2    /* first software capabilities entry */
+#define  CA_SUNW_HW_1  1 /* first hardware capabilities entry */
+#define  CA_SUNW_SF_1  2 /* first software capabilities entry */
 
-/*
- * Syminfo flag values
- */
-#define  SYMINFO_FLG_DIRECT  0x0001  /* symbol ref has direct association */
-/*  to object containing defn. */
+/* Syminfo flag values */
+#define  SYMINFO_FLG_DIRECT  0x0001 /* symbol ref has direct association to object containing defn. */
 #define  SYMINFO_FLG_PASSTHRU  0x0002 /* ignored - see SYMINFO_FLG_FILTER */
 #define  SYMINFO_FLG_COPY      0x0004 /* symbol is a copy-reloc */
-#define  SYMINFO_FLG_LAZYLOAD  0x0008 /* object containing defn should be */
-/*  lazily-loaded */
-#define  SYMINFO_FLG_DIRECTBIND  0x0010  /* ref should be bound directly to */
-/*  object containing defn. */
-#define  SYMINFO_FLG_NOEXTDIRECT  0x0020  /* don't let an external reference */
-/*  directly bind to this symbol */
-#define  SYMINFO_FLG_FILTER     0x0002 /* symbol ref is associated to a */
-#define  SYMINFO_FLG_AUXILIARY  0x0040 /*   standard or auxiliary filter */
+#define  SYMINFO_FLG_LAZYLOAD  0x0008 /* object containing defn should be lazily-loaded */
+#define  SYMINFO_FLG_DIRECTBIND  0x0010 /* ref should be bound directly to object containing defn. */
+#define  SYMINFO_FLG_NOEXTDIRECT  0x0020 /* don't let an external reference directly bind to this symbol */
+#define  SYMINFO_FLG_FILTER     0x0002 /* symbol ref is associated to a standard or auxiliary filter */
+#define  SYMINFO_FLG_AUXILIARY  0x0040 /* standard or auxiliary filter */
 
-/*
- * Syminfo.si_boundto values.
- */
+/* Syminfo.si_boundto values. */
 #define  SYMINFO_BT_SELF        0xffff /* symbol bound to self */
 #define  SYMINFO_BT_PARENT      0xfffe /* symbol bound to parent */
 #define  SYMINFO_BT_NONE        0xfffd /* no special symbol binding */
 #define  SYMINFO_BT_EXTERN      0xfffc /* symbol defined as external */
 #define  SYMINFO_BT_LOWRESERVE  0xff00 /* beginning of reserved entries */
 
-/*
- * Syminfo version values.
- */
+/* Syminfo version values. */
 #define  SYMINFO_NONE     0 /* Syminfo version */
 #define  SYMINFO_CURRENT  1
 #define  SYMINFO_NUM      2
 
-/*
- * Relocation types.
- *
- * All machine architectures are defined here to allow tools on one to
- * handle others.
- */
+/* Relocation types. */
+/* All machine architectures are defined here to allow tools on one to handle others. */
 
-#define  R_386_NONE          0  /* No relocation. */
-#define  R_386_32            1  /* Add symbol value. */
-#define  R_386_PC32          2  /* Add PC-relative symbol value. */
-#define  R_386_GOT32         3  /* Add PC-relative GOT offset. */
-#define  R_386_PLT32         4  /* Add PC-relative PLT offset. */
-#define  R_386_COPY          5  /* Copy data from shared object. */
-#define  R_386_GLOB_DAT      6  /* Set GOT entry to data address. */
-#define  R_386_JMP_SLOT      7  /* Set GOT entry to code address. */
-#define  R_386_RELATIVE      8  /* Add load address of shared object. */
-#define  R_386_GOTOFF        9  /* Add GOT-relative symbol address. */
+#define  R_386_NONE          0 /* No relocation. */
+#define  R_386_32            1 /* Add symbol value. */
+#define  R_386_PC32          2 /* Add PC-relative symbol value. */
+#define  R_386_GOT32         3 /* Add PC-relative GOT offset. */
+#define  R_386_PLT32         4 /* Add PC-relative PLT offset. */
+#define  R_386_COPY          5 /* Copy data from shared object. */
+#define  R_386_GLOB_DAT      6 /* Set GOT entry to data address. */
+#define  R_386_JMP_SLOT      7 /* Set GOT entry to code address. */
+#define  R_386_RELATIVE      8 /* Add load address of shared object. */
+#define  R_386_GOTOFF        9 /* Add GOT-relative symbol address. */
 #define  R_386_GOTPC         10 /* Add PC-relative GOT table address. */
 #define  R_386_TLS_TPOFF     14 /* Negative offset in static TLS block */
 #define  R_386_TLS_IE        15 /* Absolute address of GOT for -ve static TLS */
@@ -541,27 +487,27 @@ typedef struct {
 #define  R_386_TLS_TPOFF32   37 /* GOT entry of -ve static TLS offset */
 
 /* Null relocation */
-#define  R_AARCH64_NONE  0        /* No relocation */
+#define  R_AARCH64_NONE  0 /* No relocation */
 /* Static AArch64 relocations */
 /* Static data relocations */
-#define  R_AARCH64_ABS64   257      /* S + A */
-#define  R_AARCH64_ABS32   258      /* S + A */
-#define  R_AARCH64_ABS16   259      /* S + A */
-#define  R_AARCH64_PREL64  260      /* S + A - P */
-#define  R_AARCH64_PREL32  261      /* S + A - P */
-#define  R_AARCH64_PREL16  262      /* S + A - P */
+#define  R_AARCH64_ABS64   257 /* S + A */
+#define  R_AARCH64_ABS32   258 /* S + A */
+#define  R_AARCH64_ABS16   259 /* S + A */
+#define  R_AARCH64_PREL64  260 /* S + A - P */
+#define  R_AARCH64_PREL32  261 /* S + A - P */
+#define  R_AARCH64_PREL16  262 /* S + A - P */
 /* Group relocations to create a 16, 32, 48, or 64 bit unsigned data value or address inline */
-#define  R_AARCH64_MOVW_UABS_G0     263   /* S + A */
-#define  R_AARCH64_MOVW_UABS_G0_NC  264   /* S + A */
-#define  R_AARCH64_MOVW_UABS_G1     265   /* S + A */
-#define  R_AARCH64_MOVW_UABS_G1_NC  266   /* S + A */
-#define  R_AARCH64_MOVW_UABS_G2     267   /* S + A */
-#define  R_AARCH64_MOVW_UABS_G2_NC  268   /* S + A */
-#define  R_AARCH64_MOVW_UABS_G3     269   /* S + A */
+#define  R_AARCH64_MOVW_UABS_G0     263 /* S + A */
+#define  R_AARCH64_MOVW_UABS_G0_NC  264 /* S + A */
+#define  R_AARCH64_MOVW_UABS_G1     265 /* S + A */
+#define  R_AARCH64_MOVW_UABS_G1_NC  266 /* S + A */
+#define  R_AARCH64_MOVW_UABS_G2     267 /* S + A */
+#define  R_AARCH64_MOVW_UABS_G2_NC  268 /* S + A */
+#define  R_AARCH64_MOVW_UABS_G3     269 /* S + A */
 /* Group relocations to create a 16, 32, 48, or 64 bit signed data or offset value inline */
-#define  R_AARCH64_MOVW_SABS_G0  270      /* S + A */
-#define  R_AARCH64_MOVW_SABS_G1  271      /* S + A */
-#define  R_AARCH64_MOVW_SABS_G2  272      /* S + A */
+#define  R_AARCH64_MOVW_SABS_G0  270 /* S + A */
+#define  R_AARCH64_MOVW_SABS_G1  271 /* S + A */
+#define  R_AARCH64_MOVW_SABS_G2  272 /* S + A */
 /* Relocations to generate 19, 21 and 33 bit PC-relative addresses */
 #define  R_AARCH64_LD_PREL_LO19         273 /* S + A - P */
 #define  R_AARCH64_ADR_PREL_LO21        274 /* S + A - P */
@@ -574,18 +520,18 @@ typedef struct {
 #define  R_AARCH64_LDST64_ABS_LO12_NC   286 /* S + A */
 #define  R_AARCH64_LDST128_ABS_LO12_NC  299 /* S + A */
 /* Relocations for control-flow instructions - all offsets are a multiple of 4 */
-#define  R_AARCH64_TSTBR14   279    /* S+A-P */
-#define  R_AARCH64_CONDBR19  280    /* S+A-P */
-#define  R_AARCH64_JUMP26    282    /* S+A-P */
-#define  R_AARCH64_CALL26    283    /* S+A-P */
+#define  R_AARCH64_TSTBR14   279 /* S+A-P */
+#define  R_AARCH64_CONDBR19  280 /* S+A-P */
+#define  R_AARCH64_JUMP26    282 /* S+A-P */
+#define  R_AARCH64_CALL26    283 /* S+A-P */
 /* Group relocations to create a 16, 32, 48, or 64 bit PC-relative offset inline */
-#define  R_AARCH64_MOVW_PREL_G0     287   /* S+A-P */
-#define  R_AARCH64_MOVW_PREL_G0_NC  288   /* S+A-P */
-#define  R_AARCH64_MOVW_PREL_G1     289   /* S+A-P */
-#define  R_AARCH64_MOVW_PREL_G1_NC  290   /* S+A-P */
-#define  R_AARCH64_MOVW_PREL_G2     291   /* S+A-P */
-#define  R_AARCH64_MOVW_PREL_G2_NC  292   /* S+A-P */
-#define  R_AARCH64_MOVW_PREL_G3     293   /* S+A-P */
+#define  R_AARCH64_MOVW_PREL_G0     287 /* S+A-P */
+#define  R_AARCH64_MOVW_PREL_G0_NC  288 /* S+A-P */
+#define  R_AARCH64_MOVW_PREL_G1     289 /* S+A-P */
+#define  R_AARCH64_MOVW_PREL_G1_NC  290 /* S+A-P */
+#define  R_AARCH64_MOVW_PREL_G2     291 /* S+A-P */
+#define  R_AARCH64_MOVW_PREL_G2_NC  292 /* S+A-P */
+#define  R_AARCH64_MOVW_PREL_G3     293 /* S+A-P */
 /* Group relocations to create a 16, 32, 48, or 64 bit GOT-relative offsets inline */
 #define  R_AARCH64_MOVW_GOTOFF_G0     300 /* G(S)-GOT */
 #define  R_AARCH64_MOVW_GOTOFF_G0_NC  301 /* G(S)-GOT */
@@ -594,9 +540,9 @@ typedef struct {
 #define  R_AARCH64_MOVW_GOTOFF_G2     304 /* G(S)-GOT */
 #define  R_AARCH64_MOVW_GOTOFF_G2_NC  305 /* G(S)-GOT */
 #define  R_AARCH64_MOVW_GOTOFF_G3     306 /* G(S)-GOT */
-/*  GOT-relative data relocations */
-#define  R_AARCH64_GOTREL64  307      /* S+A-GOT */
-#define  R_AARCH64_GOTREL32  308      /* S+A-GOT */
+/* GOT-relative data relocations */
+#define  R_AARCH64_GOTREL64  307 /* S+A-GOT */
+#define  R_AARCH64_GOTREL32  308 /* S+A-GOT */
 /* GOT-relative instruction relocations */
 #define  R_AARCH64_GOT_LD_PREL19      309 /* G(S)-P */
 #define  R_AARCH64_LD64_GOTOFF_LO15   310 /* G(S)-GOT */
@@ -605,11 +551,11 @@ typedef struct {
 #define  R_AARCH64_LD64_GOTPAGE_LO15  313 /* G(S)-Page(GOT) */
 /* Relocations for thread-local storage */
 /* General Dynamic TLS relocations */
-#define  R_AARCH64_TLSGD_ADR_PREL21   512  /* G(TLSIDX(S+A)) - P */
-#define  R_AARCH64_TLSGD_ADR_PAGE21   513  /* Page(G(TLSIDX(S+A))) - Page(P) */
-#define  R_AARCH64_TLSGD_ADD_LO12_NC  514  /* G(TLSIDX(S+A)) */
-#define  R_AARCH64_TLSGD_MOVW_G1      515  /* G(TLSIDX(S+A)) - GOT */
-#define  R_AARCH64_TLSGD_MOVW_G0_NC   516  /* G(TLSIDX(S+A)) - GOT */
+#define  R_AARCH64_TLSGD_ADR_PREL21   512 /* G(TLSIDX(S+A)) - P */
+#define  R_AARCH64_TLSGD_ADR_PAGE21   513 /* Page(G(TLSIDX(S+A))) - Page(P) */
+#define  R_AARCH64_TLSGD_ADD_LO12_NC  514 /* G(TLSIDX(S+A)) */
+#define  R_AARCH64_TLSGD_MOVW_G1      515 /* G(TLSIDX(S+A)) - GOT */
+#define  R_AARCH64_TLSGD_MOVW_G0_NC   516 /* G(TLSIDX(S+A)) - GOT */
 /* Local Dynamic TLS relocations */
 #define  R_AARCH64_TLSLD_ADR_PREL21             517 /* G(LDM(S))) - P */
 #define  R_AARCH64_TLSLD_ADR_PAGE21             518 /* Page(G(LDM(S)))-Page(P) */
@@ -659,26 +605,26 @@ typedef struct {
 /* Dynamic relocations */
 /* Dynamic relocations */
 #define  R_AARCH64_COPY          1024
-#define  R_AARCH64_GLOB_DAT      1025  /* S + A */
-#define  R_AARCH64_JUMP_SLOT     1026  /* S + A */
-#define  R_AARCH64_RELATIVE      1027  /* Delta(S) + A , Delta(P) + A */
-#define  R_AARCH64_TLS_DTPREL64  1028  /* DTPREL(S+A) */
-#define  R_AARCH64_TLS_DTPMOD64  1029  /* LDM(S) */
-#define  R_AARCH64_TLS_TPREL64   1030  /* TPREL(S+A) */
-#define  R_AARCH64_TLS_DTPREL32  1031  /* DTPREL(S+A) */
-#define  R_AARCH64_TLS_DTPMOD32  1032  /* LDM(S) */
-#define  R_AARCH64_TLS_TPREL32   1033  /* DTPREL(S+A) */
+#define  R_AARCH64_GLOB_DAT      1025 /* S + A */
+#define  R_AARCH64_JUMP_SLOT     1026 /* S + A */
+#define  R_AARCH64_RELATIVE      1027 /* Delta(S) + A , Delta(P) + A */
+#define  R_AARCH64_TLS_DTPREL64  1028 /* DTPREL(S+A) */
+#define  R_AARCH64_TLS_DTPMOD64  1029 /* LDM(S) */
+#define  R_AARCH64_TLS_TPREL64   1030 /* TPREL(S+A) */
+#define  R_AARCH64_TLS_DTPREL32  1031 /* DTPREL(S+A) */
+#define  R_AARCH64_TLS_DTPMOD32  1032 /* LDM(S) */
+#define  R_AARCH64_TLS_TPREL32   1033 /* DTPREL(S+A) */
 
-#define  R_ALPHA_NONE            0  /* No reloc */
-#define  R_ALPHA_REFLONG         1  /* Direct 32 bit */
-#define  R_ALPHA_REFQUAD         2  /* Direct 64 bit */
-#define  R_ALPHA_GPREL32         3  /* GP relative 32 bit */
-#define  R_ALPHA_LITERAL         4  /* GP relative 16 bit w/optimization */
-#define  R_ALPHA_LITUSE          5  /* Optimization hint for LITERAL */
-#define  R_ALPHA_GPDISP          6  /* Add displacement to GP */
-#define  R_ALPHA_BRADDR          7  /* PC+4 relative 23 bit shifted */
-#define  R_ALPHA_HINT            8  /* PC+4 relative 16 bit shifted */
-#define  R_ALPHA_SREL16          9  /* PC relative 16 bit */
+#define  R_ALPHA_NONE            0 /* No reloc */
+#define  R_ALPHA_REFLONG         1 /* Direct 32 bit */
+#define  R_ALPHA_REFQUAD         2 /* Direct 64 bit */
+#define  R_ALPHA_GPREL32         3 /* GP relative 32 bit */
+#define  R_ALPHA_LITERAL         4 /* GP relative 16 bit w/optimization */
+#define  R_ALPHA_LITUSE          5 /* Optimization hint for LITERAL */
+#define  R_ALPHA_GPDISP          6 /* Add displacement to GP */
+#define  R_ALPHA_BRADDR          7 /* PC+4 relative 23 bit shifted */
+#define  R_ALPHA_HINT            8 /* PC+4 relative 16 bit shifted */
+#define  R_ALPHA_SREL16          9 /* PC relative 16 bit */
 #define  R_ALPHA_SREL32          10 /* PC relative 32 bit */
 #define  R_ALPHA_SREL64          11 /* PC relative 64 bit */
 #define  R_ALPHA_OP_PUSH         12 /* OP stack push */
@@ -698,7 +644,7 @@ typedef struct {
 #define  R_ALPHA_JMP_SLOT        26 /* Create PLT entry */
 #define  R_ALPHA_RELATIVE        27 /* Adjust by program base */
 
-#define  R_ARM_NONE            0/* No relocation. */
+#define  R_ARM_NONE            0 /* No relocation. */
 #define  R_ARM_PC24            1
 #define  R_ARM_ABS32           2
 #define  R_ARM_REL32           3
@@ -728,8 +674,8 @@ typedef struct {
 #define R_ARM_THM_MOVW_ABS_NC  47
 #define R_ARM_THM_MOVT_ABS     48
 
-// Block of PC-relative relocations added to work around gcc putting
-// object relocations in static executables.
+/* Block of PC-relative relocations added to work around gcc putting */
+/* object relocations in static executables. */
 #define R_ARM_THM_JUMP24         30
 #define R_ARM_PREL31             42
 #define R_ARM_MOVW_PREL_NC       45
@@ -770,7 +716,7 @@ typedef struct {
 #define  R_ARM_RPC24          254
 #define  R_ARM_RBASE          255
 
-#define  R_PPC_NONE             0/* No relocation. */
+#define  R_PPC_NONE             0 /* No relocation. */
 #define  R_PPC_ADDR32           1
 #define  R_PPC_ADDR24           2
 #define  R_PPC_ADDR16           3
@@ -808,9 +754,7 @@ typedef struct {
 #define  R_PPC_SECTOFF_HI       35
 #define  R_PPC_SECTOFF_HA       36
 
-/*
- * TLS relocations
- */
+/* TLS relocations */
 #define R_PPC_TLS             67
 #define R_PPC_DTPMOD32        68
 #define R_PPC_TPREL16         69
@@ -836,10 +780,7 @@ typedef struct {
 #define R_PPC_GOT_TPREL16_HI  89
 #define R_PPC_GOT_TPREL16_HA  90
 
-/*
- * The remaining relocs are from the Embedded ELF ABI, and are not in the
- *  SVR4 ELF ABI.
- */
+/* The remaining relocs are from the Embedded ELF ABI, and are not in the SVR4 ELF ABI. */
 
 #define  R_PPC_EMB_NADDR32     101
 #define  R_PPC_EMB_NADDR16     102
@@ -939,16 +880,16 @@ typedef struct {
 #define  R_SPARC_TLS_TPOFF32    78
 #define  R_SPARC_TLS_TPOFF64    79
 
-#define  R_X86_64_NONE             0  /* No relocation. */
-#define  R_X86_64_64               1  /* Add 64 bit symbol value. */
-#define  R_X86_64_PC32             2  /* PC-relative 32 bit signed sym value. */
-#define  R_X86_64_GOT32            3  /* PC-relative 32 bit GOT offset. */
-#define  R_X86_64_PLT32            4  /* PC-relative 32 bit PLT offset. */
-#define  R_X86_64_COPY             5  /* Copy data from shared object. */
-#define  R_X86_64_GLOB_DAT         6  /* Set GOT entry to data address. */
-#define  R_X86_64_JMP_SLOT         7  /* Set GOT entry to code address. */
-#define  R_X86_64_RELATIVE         8  /* Add load address of shared object. */
-#define  R_X86_64_GOTPCREL         9  /* Add 32 bit signed pcrel offset to GOT. */
+#define  R_X86_64_NONE             0 /* No relocation. */
+#define  R_X86_64_64               1 /* Add 64 bit symbol value. */
+#define  R_X86_64_PC32             2 /* PC-relative 32 bit signed sym value. */
+#define  R_X86_64_GOT32            3 /* PC-relative 32 bit GOT offset. */
+#define  R_X86_64_PLT32            4 /* PC-relative 32 bit PLT offset. */
+#define  R_X86_64_COPY             5 /* Copy data from shared object. */
+#define  R_X86_64_GLOB_DAT         6 /* Set GOT entry to data address. */
+#define  R_X86_64_JMP_SLOT         7 /* Set GOT entry to code address. */
+#define  R_X86_64_RELATIVE         8 /* Add load address of shared object. */
+#define  R_X86_64_GOTPCREL         9 /* Add 32 bit signed pcrel offset to GOT. */
 #define  R_X86_64_32               10 /* Add 32 bit zero extended symbol value */
 #define  R_X86_64_32S              11 /* Add 32 bit sign extended symbol value */
 #define  R_X86_64_16               12 /* Add 16 bit zero extended symbol value */

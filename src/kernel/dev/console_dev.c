@@ -3,7 +3,7 @@
 #include <kernel/serial.h>
 #include <kernel/vdev.h>
 
-/* console：framebuffer + 串口双输出，只写设备 */
+/* 双输出只写设备 */
 static int64_t console_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
 {
     (void)dev;

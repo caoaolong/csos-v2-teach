@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-/* 启动 compositor 服务（输入归属 + 合成输出，独占键盘/鼠标与显存） */
+/* 启动 compositor 服务 */
 static long start_compositor()
 {
     long pid = fork();
@@ -17,7 +17,7 @@ static long start_compositor()
 
         execve("/sbin/compositor", argv, NULL);
 
-        /* execve 只有执行失败才会返回 */
+        /* execve 失败才会返回 */
         printf("execve compositor failed\n");
         exit(1);
     }
@@ -26,7 +26,7 @@ static long start_compositor()
     return pid;
 }
 
-/* 启动 term 终端客户端（compositor 的 pipe 客户端，不碰设备） */
+/* 启动 term 终端客户端 */
 static long start_term()
 {
     long pid = fork();
@@ -40,7 +40,7 @@ static long start_term()
 
         execve("/bin/term", argv, NULL);
 
-        /* execve 只有执行失败才会返回 */
+        /* execve 失败才会返回 */
         printf("execve term failed\n");
         exit(1);
     }
@@ -51,11 +51,11 @@ static long start_term()
 
 int main()
 {
-    /* 1. 启动系统服务：先 compositor（建 fifo），再 term（连 fifo） */
+    /* 按序启动服务：先 compositor 建 fifo，再启动 term */
     long compositor_pid = start_compositor();
     long term_pid = start_term();
 
-    /* 2. 进入子进程监控循环 */
+    /* 进入子进程监控循环 */
     for (;;)
     {
         int status;

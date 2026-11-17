@@ -17,7 +17,7 @@ static const char *const g_probe_ext[] = {
     "ext4",
 };
 
-/* 在指定设备上按序尝试各驱动（fstype=auto 用） */
+/* 在设备上按序尝试驱动 */
 static int mount_dev_probe(const char *mp, const char *dev,
                            const char *const *probe, int nprobe)
 {
@@ -65,24 +65,24 @@ static int mount_auto(const char *mp, const char *const *probe, int nprobe)
     return VFS_ERR_NODEV;
 }
 
-/* 无 csos.cfg 时的旧行为：ramfs 根 + 自动探测 */
+/* 无配置时挂 ramfs 根并自动探测 */
 static void init_mounts_legacy(void)
 {
     if (vfs_mount("ramfs", "/", "ramfs") != VFS_OK)
         put_string("[MOUNT] FATAL: root mount failed\n");
 
-    /* 数据分区：自动探测（首个 FAT32 卷 -> /fat，首个 EXT4 卷 -> /ext4） */
+    /* 自动探测数据分区 */
     mount_auto("/fat", g_probe_fat, (int)(sizeof(g_probe_fat) / sizeof(g_probe_fat[0])));
     mount_auto("/ext4", g_probe_ext, (int)(sizeof(g_probe_ext) / sizeof(g_probe_ext[0])));
 }
 
-/* 有 csos.cfg 时：按 mount 行挂载，root= 兜底 /，失败回退 ramfs / */
+/* 有配置时按表挂载 */
 static void init_mounts_config(void)
 {
     int i;
     int root_done = 0;
 
-    /* 第一遍：挂载点为 / 的行（配置文件顺序） */
+    /* 先挂载根目录 */
     for (i = 0; i < g_boot_config.mount_count; i++)
     {
         config_mount_t *m = &g_boot_config.mounts[i];
@@ -111,10 +111,10 @@ static void init_mounts_config(void)
             else
                 fput_string("[MOUNT] root %s (%s) failed rc=%d\n", m->dev, m->fstype, rc);
         }
-        break; /* 只取第一条 / 行 */
+        break; /* 只取第一条根记录 */
     }
 
-    /* root= 兜底：在指定设备上探测 fstype 挂为 / */
+    /* 用 root 参数兜底根目录 */
     if (!root_done && g_boot_config.root[0] != '\0')
     {
         if (mount_dev_probe("/", g_boot_config.root, g_probe_fat,
@@ -130,7 +130,7 @@ static void init_mounts_config(void)
             put_string("[MOUNT] FATAL: root mount failed\n");
     }
 
-    /* 第二遍：其余挂载点（保持文件顺序） */
+    /* 再挂载其余挂载点 */
     for (i = 0; i < g_boot_config.mount_count; i++)
     {
         config_mount_t *m = &g_boot_config.mounts[i];
@@ -169,7 +169,7 @@ void init_mounts()
     if (vfs_register_driver(&pipefs_driver) != VFS_OK)
         put_string("[MOUNT] register pipefs failed\n");
 
-    /* 固定挂载：类型写死，不探测 */
+    /* 固定挂载，不探测 */
     if (vfs_mount("devfs", "/dev", "devfs") != VFS_OK)
         put_string("[MOUNT] mount /dev failed\n");
     if (vfs_mount("pipefs", "/pipe", "pipefs") != VFS_OK)

@@ -25,7 +25,7 @@
 #define SYS_BRK 14     /* rdi=new_brk(0=查询) -> 调整后 brk/失败-1 */
 #define SYS_PIPE 15    /* rdi=int[2] out -> 0(填入读/写fd)/-1 */
 #define SYS_MKFIFO 16  /* rdi=path -> 0/-errno */
-#define SYS_FBMAP 17   /* -> 显存用户态基址/-1（幂等，可重复调用） */
+#define SYS_FBMAP 17   /* -> 显存用户态基址/-1（幂等） */
 #define SYS_FBCTL 18   /* rdi=op(0=交还console,1=compositor接管) -> 0/-EINVAL */
 
 /* fbctl 操作码 */
@@ -35,7 +35,7 @@
 /* 标准文件描述符编号 */
 #define STDIN_FILENO 0  /* 键盘输入 */
 #define STDOUT_FILENO 1 /* 屏幕输出 */
-#define STDERR_FILENO 2 /* 屏幕输出（暂与 stdout 同设备，可独立重定向） */
+#define STDERR_FILENO 2 /* 屏幕输出（暂与 stdout 同设备） */
 
 /* open flags：与 VFS_O_* 同值，内核直接透传 vfs_open */
 #define O_RDONLY 0x00
@@ -52,7 +52,7 @@
 #define SEEK_CUR 1
 #define SEEK_END 2
 
-/* 错误号（取值与 Linux 兼容）：syscall 以负值回传，libc 填 errno 后统一回 -1 */
+/* 错误号（取值与 Linux 兼容）：syscall 以负值回传，libc 填 errno 后回 -1 */
 #define EINTR 4   /* 被信号打断（暂无信号机制，预留） */
 #define ENOENT 2  /* 无此文件或目录 */
 #define EINVAL 22 /* 非法参数 */

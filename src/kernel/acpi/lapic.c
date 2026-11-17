@@ -36,7 +36,7 @@
 #define ICR_LEVEL_ASSERT (1u << 14)
 #define ICR_TRIGGER_LEVEL (1u << 15)
 
-/* BSP 校准后的周期初值；AP 直接复用 */
+/* BSP 校准的周期初值，AP 直接复用 */
 static uint32_t g_apic_timer_init_count;
 
 uint32_t g_bsp_apic_id;
@@ -61,7 +61,7 @@ static uint32_t lapic_read(uint32_t reg)
 static void lapic_write(uint32_t reg, uint32_t value)
 {
     g_lapic[reg / 4] = value;
-    /* 读 ID 寄存器作同步，避免部分硬件上的写缓冲延迟 */
+    /* 读 ID 寄存器做同步 */
     (void)lapic_read(LAPIC_ID);
 }
 
@@ -91,7 +91,7 @@ static void lapic_icr_write(uint32_t dest_apic_id, uint32_t low)
     lapic_write(LAPIC_ICR_LOW, low);
 }
 
-/* INIT-SIPI-SIPI：vector_page 为 trampoline 物理页号（物理地址 >> 12） */
+/* INIT-SIPI-SIPI 序列，参数为 trampoline 物理页号 */
 void lapic_start_ap(uint32_t apic_id, uint8_t vector_page)
 {
     uint32_t i;
@@ -99,22 +99,22 @@ void lapic_start_ap(uint32_t apic_id, uint8_t vector_page)
     if (g_lapic == NULL)
         lapic_halt("FATAL: lapic_start_ap before init_lapic\n");
 
-    /* INIT assert */
+    /* 发 INIT assert */
     lapic_icr_write(apic_id,
                     ICR_DELIVERY_INIT | ICR_LEVEL_ASSERT | ICR_TRIGGER_LEVEL);
-    /* Intel 建议： */
+    /* 延迟等待 */
     for (i = 0; i < 1000000; i++)
         cpu_pause();
 
-    /* INIT deassert */
+    /* 发 INIT deassert */
     lapic_icr_write(apic_id, ICR_DELIVERY_INIT | ICR_TRIGGER_LEVEL);
-    /* Intel 建议： */
+    /* 延迟等待 */
     for (i = 0; i < 1000000; i++)
         cpu_pause();
 
-    /* SIPI × 2 */
+    /* 发 SIPI 两次 */
     lapic_icr_write(apic_id, ICR_DELIVERY_SIPI | (vector_page & ICR_VECTOR_MASK));
-    /* Intel 建议：SIPI 后等待约 200 微秒 */
+    /* SIPI 后等待约 200 微秒 */
     for (i = 0; i < 20000; i++)
         cpu_pause();
     lapic_icr_write(apic_id, ICR_DELIVERY_SIPI | (vector_page & ICR_VECTOR_MASK));
@@ -130,7 +130,7 @@ void init_apic_timer(uint32_t freq_hz)
     if (freq_hz == 0)
         timer_halt("FATAL: init_apic_timer freq_hz=0\n");
 
-    /* 校准在 sti 之前；再 cli 一次做防御 */
+    /* 校准在关中断下进行 */
     __asm__ volatile("cli");
 
     lapic_timer_stop();
@@ -138,7 +138,7 @@ void init_apic_timer(uint32_t freq_hz)
     if (pit_ch2_oneshot_start(PIT_CALIBRATE_MS) != 0)
         timer_halt("FATAL: PIT Ch2 oneshot start failed\n");
 
-    /* 紧接 PIT 启动后开始倒计时，缩小窗口误差 */
+    /* 启动倒计时校准 */
     lapic_timer_calib_start();
 
     while (!pit_ch2_expired())
@@ -152,7 +152,7 @@ void init_apic_timer(uint32_t freq_hz)
     if (elapsed == 0)
         timer_halt("FATAL: APIC timer calibration elapsed=0\n");
 
-    /* 10ms 窗口：ticks/sec = elapsed * 1000 / ms */
+    /* 按 10ms 窗口换算每秒 ticks */
     ticks_per_sec = ((uint64_t)elapsed * 1000ull) / (uint64_t)PIT_CALIBRATE_MS;
     init_count = (uint32_t)(ticks_per_sec / (uint64_t)freq_hz);
     if (init_count == 0)
@@ -197,7 +197,7 @@ void lapic_timer_calib_start()
     if (g_lapic == NULL)
         lapic_halt("FATAL: lapic_timer_calib_start before init_lapic\n");
 
-    /* 屏蔽 LVT，避免校准期间投递；oneshot（不置 PERIODIC） */
+    /* 屏蔽 LVT，单次计数模式校准 */
     lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
     lapic_write(LAPIC_INIT_COUNT, 0);
     lapic_write(LAPIC_DIVIDE, LAPIC_DIVIDE_BY_16);
@@ -248,16 +248,16 @@ void init_lapic()
 
     msr = rdmsr(IA32_APIC_BASE_MSR);
     msr |= APIC_BASE_ENABLE;
-    /* 保持/写回基址（与 MADT 一致时通常已正确） */
+    /* 保持基址不变 */
     if ((msr & APIC_BASE_ADDR_MASK) == 0)
         msr |= phys;
     wrmsr(IA32_APIC_BASE_MSR, msr);
 
-    /* 先 remap + 全屏蔽，避免与异常向量冲突的旧 PIC 中断 */
+    /* 先屏蔽旧 PIC 中断 */
     init_pic();
     pic_disable();
 
-    // APIC_SPURIOUS_VECTOR = 0xFF，避免与 APIC_TIMER_VECTOR 冲突（伪中断向量）
+    /* APIC_SPURIOUS_VECTOR = 0xFF，避免与 APIC_TIMER_VECTOR 冲突（伪中断向量） */
     lapic_write(LAPIC_SVR, LAPIC_SVR_ENABLE | APIC_SPURIOUS_VECTOR);
 
     id = lapic_read(LAPIC_ID) >> 24;

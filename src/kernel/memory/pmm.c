@@ -81,7 +81,7 @@ void init_pmm(boot_info_t *boot)
         return;
     }
 
-    /* 第二遍：把可用类型标记为空闲 */
+    /* 标记可用区为空闲 */
     ptr = (uint8_t *)(uintptr_t)boot->memory_map;
     while (ptr < end)
     {
@@ -95,18 +95,18 @@ void init_pmm(boot_info_t *boot)
         ptr += boot->descriptor_size;
     }
 
-    /* 物理页 0 保留：alloc_page 返回 (void *)(page * PAGE_SIZE)，页 0 会变成 NULL */
+    /* 保留物理页 0 */
     alloc->mark_used(0, PAGE_SIZE);
 
-    /* 内核镜像（含栈所在 BSS）标为已用 */
+    /* 内核镜像标为已用 */
     kernel_start = page_align_down((uint64_t)(uintptr_t)__bootstrap_start);
     kernel_end = page_align_up((uint64_t)(uintptr_t)__kernel_phys_end);
     alloc->mark_used(kernel_start, kernel_end);
 
-    /* BootInfo 固定页 */
+    /* 保留启动信息页 */
     alloc->mark_used(CSOS_BOOT_INFO_ADDR, CSOS_BOOT_INFO_ADDR + PAGE_SIZE);
 
-    /* Memory Map 缓冲区本身可能落在 BootServicesData，保持占用直到不再需要 */
+    /* 内存映射表暂保留占用 */
     alloc->mark_used(boot->memory_map, boot->memory_map + boot->memory_map_size);
 
     fput_string("[PMM] allocator=%s managed pages=%llu free pages=%llu kernel=0x%llx-0x%llx\n",

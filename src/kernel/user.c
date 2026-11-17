@@ -15,7 +15,7 @@
 
 extern void enter_user(uint64_t rip, uint64_t rsp);
 
-/* 最小 loader 上限：静态可控，不做大文件/动态链接 */
+/* ELF 加载上限，静态可控 */
 #define ELF_MAX_FILE_SIZE (8ULL * 1024 * 1024)
 #define ELF_MAX_SEGS 16
 #define ELF_MAX_SEG_MEMSZ (16ULL * 1024 * 1024)
@@ -45,12 +45,11 @@ static uint64_t align_up_u64(uint64_t v, uint64_t a)
 
 static int user_range_ok(uint64_t vaddr, uint64_t size)
 {
-    /* 收敛进每任务私有的 [USER_IMAGE_BASE, USER_IMAGE_END) 窗口
-     * （= PDPT[1] 私有子树，fork 拷贝 / wait 回收的基本单位）。 */
+    /* 地址须落在任务私有映像窗口内 */
     if (size == 0)
         return 0;
     if (vaddr + size < vaddr)
-        return 0; /* 回绕 */
+        return 0; /* 地址回绕 */
     if (vaddr < USER_IMAGE_BASE || vaddr + size > USER_IMAGE_END)
         return 0;
     return 1;
@@ -78,7 +77,7 @@ static int map_one_segment(uint64_t vaddr, uint64_t file_off,
             return -1;
         kernel_memset(page, 0, (uint32_t)PAGE_SIZE);
 
-        /* 本页与 [vaddr, vaddr+filesz) 的交集即需拷贝部分 */
+        /* 本页与文件区间的交集即需拷贝部分 */
         copy_start = va > vaddr ? va : vaddr;
         copy_end = page_va_end < seg_file_end ? page_va_end : seg_file_end;
         if (copy_end > copy_start)
@@ -220,7 +219,7 @@ static void *alloc_user_stack_page()
     return stack_page;
 }
 
-/* 前向声明：定义在 exec 区；boot 与 exec 共用同一套栈布局 */
+/* exec 区定义，boot 与 exec 共用栈布局 */
 static uint64_t exec_setup_stack(void *stack_page, char *const kargv[], int kargc,
                                  char *const kenvp[], int kenvc);
 
@@ -230,7 +229,7 @@ static void setup_kstack_and_enter(uint64_t rip)
     void *kstack_page;
     uint64_t kstack_top;
     void *stack_page = alloc_user_stack_page();
-    /* boot 栈同样铺 argc=0：crt0 入口 pop %rdi 取 argc，裸栈顶不可读 */
+    /* boot 栈铺 argc=0，供 crt0 入口读取 */
     uint64_t user_rsp = exec_setup_stack(stack_page, NULL, 0, NULL, 0);
 
     if (self == NULL)
@@ -243,10 +242,10 @@ static void setup_kstack_and_enter(uint64_t rip)
 
     kstack_top = (uint64_t)(uintptr_t)kstack_page + USER_KSTACK_SIZE;
     self->kstack_top = kstack_top;
-    syscall_kstack_top = kstack_top; /* 供 syscall_entry 切栈 */
+    syscall_kstack_top = kstack_top; /* 供 syscall 入口切栈 */
     tss_set_rsp0(kstack_top);
 
-    /* 进 init 前清屏：splash 只留在启动阶段，用户态从干净屏幕开始 */
+    /* 进 init 前清屏 */
     fb_console_clear_full();
 
     fput_string("[USER] enter rip=0x%llx rsp=0x%llx rsp0=0x%llx\n",
@@ -336,7 +335,7 @@ static uint64_t map_elf_image(const uint8_t *img, uint64_t file_size,
         return 0;
     }
 
-    /* 入口必须落在某个 LOAD 段内 */
+    /* 入口须落在某个 LOAD 段内 */
     {
         int ok = 0;
 
@@ -389,9 +388,7 @@ static uint64_t map_loaded_elf(uint8_t *img, uint64_t file_size,
     return entry;
 }
 
-/* 堆基址 = max(映像末端, 固定栈页顶），按页对齐；新建/exec 后 brk == base（空堆）。
- * init 基址 0x40002000 已在栈页之上，compositor 基址 0x41000000 亦然，故堆恒跟在
- * 映像末端之后，与映像/固定栈不重叠；fork 由 vmm_clone_user_range 连堆页一并拷贝。 */
+/* 堆基址跟在映像末端之后，新建后堆为空 */
 static void heap_reset_for_task(task_t *self, uint64_t image_end)
 {
     uint64_t base = image_end;
@@ -400,7 +397,7 @@ static void heap_reset_for_task(task_t *self, uint64_t image_end)
         base = USER_STACK_TOP;
     base = align_up_u64(base, PAGE_SIZE);
     if (base > USER_FB_BASE)
-        base = USER_FB_BASE; /* 映像异常庞大时：堆让出整个显存窗，brk 自然失败 */
+        base = USER_FB_BASE; /* 映像过大时堆让出显存窗 */
     self->heap_base = base;
     self->heap_brk = base;
 }
@@ -419,7 +416,7 @@ void user_enter_init(const char *init_path)
     if (self == NULL)
         user_halt("FATAL: no current task for init\n");
 
-    /* 先建私表再映射：后续装载落进任务自己的 PDPT[1] 子树 */
+    /* 先建私表再映射用户映像 */
     pgdir = vmm_new_user_pml4(USER_IMAGE_BASE, USER_IMAGE_END);
     if (pgdir == NULL)
         user_halt("FATAL: init addr space alloc failed\n");
@@ -542,7 +539,7 @@ int user_exec_replace(const char *kpath, char *const kargv[], int kargc,
     if (load_and_check_elf(kpath, &img, &file_size) != 0)
         return -1;
 
-    /* 自此旧映像销毁：失败即 FATAL，不再返回原程序 */
+    /* 自此旧映像已销毁，失败即终止 */
     fput_string("[USER] exec '%s'\n", kpath);
     unmap_user_range(USER_IMAGE_BASE, USER_IMAGE_END);
 

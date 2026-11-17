@@ -19,7 +19,7 @@ extern char smp_trampoline_start[];
 extern char smp_trampoline_end[];
 extern char tramp_bootinfo[];
 
-/* 与 smp_trampoline.S 中 tramp_bootinfo 布局一致 */
+/* 与 trampoline 启动信息布局一致 */
 typedef struct smp_bootinfo
 {
     volatile uint32_t started;

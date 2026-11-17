@@ -4,7 +4,7 @@
 #include <kernel/serial.h>
 #include <kernel/string.h>
 
-/* 取下一段路径分量 [*p, end)，跳过连续 '/'；返回分量长度，0 表示耗尽 */
+/* 取下一段路径分量 */
 static uint32_t ramfs_next_comp(const char **p, const char *end, const char **comp)
 {
     const char *s = *p;
@@ -36,7 +36,7 @@ static ramfs_node_t *ramfs_child_find(ramfs_node_t *dir, const char *comp, uint3
     return NULL;
 }
 
-/* 按名字升序插入，保证 readdir 顺序稳定 */
+/* 按名字升序插入 */
 static void ramfs_child_link(ramfs_node_t *dir, ramfs_node_t *node)
 {
     ramfs_node_t **pp = &dir->child;
@@ -60,7 +60,7 @@ static void ramfs_child_unlink(ramfs_node_t *node)
     node->parent = NULL;
 }
 
-/* 拆出父路径长度与末级名字；无 '/' 时父为根（长度 0） */
+/* 拆出父路径与末级名字 */
 static void ramfs_split(const char *rel, uint32_t len, uint32_t *parent_len,
                         const char **leaf, uint32_t *leaf_len)
 {
@@ -73,7 +73,7 @@ static void ramfs_split(const char *rel, uint32_t len, uint32_t *parent_len,
     *parent_len = i > 0 ? i - 1 : 0;
 }
 
-/* 调用者已持锁：按路径查找节点，空路径即根 */
+/* 按路径查找节点，调用者已持锁 */
 static int ramfs_lookup(ramfs_sb_t *sb, const char *path, uint32_t len, ramfs_node_t **out)
 {
     const char *p = path;
@@ -96,7 +96,7 @@ static int ramfs_lookup(ramfs_sb_t *sb, const char *path, uint32_t len, ramfs_no
     return VFS_OK;
 }
 
-/* 调用者已持锁：在 rel 处新建文件或目录，父目录必须已存在 */
+/* 新建文件或目录，调用者已持锁 */
 static int ramfs_create_locked(ramfs_sb_t *sb, const char *rel, uint32_t len,
                                uint32_t is_dir, ramfs_node_t **out)
 {
@@ -290,7 +290,7 @@ static int64_t ramfs_write(vfs_file_t *f, const void *buf, uint64_t len)
         spin_unlock_irqrestore(&sb->lock, irq);
         return rc;
     }
-    /* seek 越过 EOF 产生的空洞必须读出为 0，kmalloc 不保证清零 */
+    /* 空洞补零 */
     if (f->pos > n->size)
         kernel_memset(n->data + n->size, 0, (uint32_t)(f->pos - n->size));
     if (len)
@@ -384,7 +384,7 @@ static int ramfs_rmdir(vfs_mount_t *m, const char *rel)
         else if (n->child)
             rc = VFS_ERR_NOTEMPTY;
         else if (n->refs)
-            rc = VFS_ERR_BUSY; /* 仍有句柄或游标引用 */
+            rc = VFS_ERR_BUSY; /* 仍有引用 */
         else
         {
             ramfs_child_unlink(n);
@@ -424,7 +424,7 @@ static int ramfs_opendir(vfs_mount_t *m, const char *rel, vfs_dir_t *d)
     return rc;
 }
 
-/* 游标语义：pos 为最近返回的子项并被引用计数钉住，rmdir 无法删除它，链表指针始终有效 */
+/* 游标指向最近返回的子项 */
 static int ramfs_readdir(vfs_dir_t *d, vfs_dirent_t *out)
 {
     ramfs_sb_t *sb = (ramfs_sb_t *)d->mnt->priv;

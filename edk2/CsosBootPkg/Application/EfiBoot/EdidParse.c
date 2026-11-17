@@ -46,7 +46,8 @@ EdidParsePhysicalSize (
   if ((Sum & 0xFFu) != 0) {
     return -1;
   }
-  /* Centimeters -> millimeters; 0 means unknown (projector/aspect-only). */
+  /* Centimeters to millimeters. */
+  /* Zero means unknown size. */
   if ((Edid[EDID_PHYS_W_OFF] == 0) || (Edid[EDID_PHYS_H_OFF] == 0)) {
     return -1;
   }

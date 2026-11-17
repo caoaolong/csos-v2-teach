@@ -12,7 +12,7 @@
 #include <kernel/timer.h>
 #include <kernel/spinlock.h>
 
-/* Local APIC ID is 8 bits */
+/* APIC ID 占 8 位 */
 #define SCHED_MAX_CPUS 256
 
 typedef struct cpu_runqueue
@@ -31,11 +31,11 @@ static task_t *g_sleep_head;
 static spinlock_t g_sched_lock = SPINLOCK_INIT;
 static unsigned g_rr_create;
 
-/* syscall entry stack (used by syscall_entry.S; switched per current user task) */
+/* syscall 入口栈，按当前任务切换 */
 uint64_t syscall_kstack_top;
 uint64_t syscall_user_rsp;
 
-/* PID allocation and global task list (exit finds orphans, wait finds zombies; hold g_sched_lock) */
+/* PID 分配与全局任务链表，持锁访问 */
 task_t *g_init_task = NULL;
 static int g_next_pid = 1;
 static task_t *g_all_tasks = NULL;
@@ -87,16 +87,13 @@ static void idle_init(task_t *idle)
     idle->state = TASK_READY;
     idle->wake_jiffies = 0;
     idle->on_ready = 0;
-    idle->on_cpu = 1; /* idle always counts as current on its cpu */
+    idle->on_cpu = 1; /* idle 恒为当前任务 */
     idle->is_idle = 1;
     idle->pinned = 0;
     idle->cpu = 0;
 }
 
-/*
- * per-CPU runqueue FIFO.
- * Caller must hold g_rq[cpu].lock; idle never enqueues.
- */
+/* per-CPU 就绪队列，调用者持锁 */
 static void ready_enqueue_locked(unsigned cpu, task_t *t)
 {
     if (t == NULL || t->is_idle || t->on_ready)
@@ -148,9 +145,7 @@ static task_t *ready_dequeue_local(unsigned cpu)
     return t;
 }
 
-/*
- * When local queue is empty, steal one task from another online CPU.
- */
+/* 本地空时从他核窃取一个任务 */
 static task_t *rq_steal_one(unsigned thief)
 {
     unsigned i;
@@ -336,7 +331,7 @@ void sched_wake_sleepers()
             *pp = t->sleep_next;
             t->sleep_next = NULL;
             t->state = TASK_READY;
-            /* still on its cpu: only change state, requeue on next schedule */
+            /* 仍在核上只改状态，下次调度再入队 */
             if (!t->on_cpu)
                 ready_enqueue((unsigned)t->cpu, t);
         }
@@ -361,13 +356,13 @@ void sched_sleep_jiffies(uint64_t jf)
         return;
 
     flags = spin_lock_irqsave(&g_sched_lock);
-    /* running task is never on the ready queue */
+    /* 运行中任务不在就绪队列 */
     cur->wake_jiffies = jiffies + jf;
     cur->state = TASK_SLEEPING;
     sleep_enqueue(cur);
     spin_unlock_irqrestore(&g_sched_lock, flags);
 
-    /* must yield after releasing the lock, or we self-deadlock */
+    /* 解锁后再让出，避免自死锁 */
     yield();
 }
 
@@ -396,7 +391,7 @@ void sched_unblock(task_t *t)
     if (t->state == TASK_BLOCKED)
     {
         t->state = TASK_READY;
-        /* still running on some cpu: only change state, requeue on next schedule */
+        /* 仍在运行只改状态，下次调度再入队 */
         if (!t->on_cpu)
             ready_enqueue((unsigned)t->cpu, t);
     }
@@ -447,8 +442,7 @@ uint64_t schedule_from_irq(exception_frame_t *frame)
         next->cpu = (uint8_t)cpu;
     }
 
-    /* Switch address space and entry stack with task: kernel tasks (pgdir NULL) use master;
-     * kernel stack/TSS only maintained for user tasks. */
+    /* 随任务切换地址空间与入口栈 */
     {
         uint64_t *root = next->pgdir != NULL ? next->pgdir : vmm_master_pml4();
 
@@ -476,8 +470,7 @@ void handler_yield(exception_frame_t *frame)
     (void)frame;
 }
 
-/* fork child: copy of parent trap frame on kstack top (child rax=0), enters user via iret.
- * Not enqueued: caller fills pgdir/fd then task_enqueue. NULL on failure. */
+/* fork 子任务：拷贝父陷阱帧，调用方再填充页表与 fd */
 task_t *task_alloc_fork(exception_frame_t *frame)
 {
     task_t *parent = sched_current();
@@ -500,7 +493,7 @@ task_t *task_alloc_fork(exception_frame_t *frame)
     kernel_memset(t, 0, sizeof(*t));
     f = (exception_frame_t *)(kstack + USER_KSTACK_SIZE - sizeof(*f));
     *f = *frame;
-    f->rax = 0; /* child fork returns 0 */
+    f->rax = 0; /* 子进程 fork 返回 0 */
     t->rsp = (uint64_t)(uintptr_t)f;
     t->name = parent->name;
     t->kstack_page = kstack;
@@ -534,7 +527,7 @@ void task_enqueue(task_t *t)
     ready_enqueue((unsigned)t->cpu, t);
 }
 
-/* Release all private resources of a zombie (caller already unlinked it, not holding lock) */
+/* 释放僵尸任务的私有资源，调用者已摘链 */
 static void task_destroy(task_t *z)
 {
     if (z->pgdir != NULL)
@@ -576,7 +569,7 @@ void task_exit_current(int code)
                 cur->pid, code);
     if (wake != NULL)
         sched_unblock(wake);
-    /* zombie never requeues; reaped by parent wait after switching away */
+    /* 僵尸不再入队，由父 wait 回收 */
     for (;;)
         yield();
 }

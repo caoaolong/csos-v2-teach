@@ -7,7 +7,7 @@
 #define BOOT_IDENTITY_BYTES (512ULL * 1024 * 1024)
 #define BOOT_PT_POOL_PAGES 16u
 
-/* 引导阶段须在物理地址执行，代码/数据均放在 bootstrap 段 */
+/* 引导代码放专用段 */
 #define BOOT_SECTION __attribute__((section(".text.boot_paging")))
 #define BOOT_BSS __attribute__((section(".bss.boot_paging")))
 
@@ -130,10 +130,7 @@ static BOOT_SECTION int boot_map_identity_huge()
 
 static BOOT_SECTION int boot_map_kernel_image()
 {
-    /*
-     * 禁止调用 kernel_layout.h 中的 inline 辅助函数：-O0 下可能生成
-     * 高半核 .text 符号，在 load CR3 之前调用会访问未映射地址。
-     */
+    /* 不调用内核辅助函数，避免未映射访问 */
     uint64_t phys = (uint64_t)(uintptr_t)__kernel_phys_start;
     uint64_t virt = (uint64_t)(uintptr_t)__kernel_virt_start;
     uint64_t end = (uint64_t)(uintptr_t)__kernel_phys_end;

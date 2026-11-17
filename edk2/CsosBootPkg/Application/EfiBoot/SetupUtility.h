@@ -11,90 +11,60 @@
 
 typedef CSOS_SETUP_CONFIGURATION  CSOS_BOOT_SETUP;
 
-/**
-  Load persisted setup configuration and enumerate GOP modes.
-
-  Does not switch GOP mode or draw UI. Call BootGraphicsApplyMode() first,
-  then CsosSetupUtilityBeginUi().
-
-  @param[in] ImageHandle  EfiBoot image handle.
-
-  @retval EFI_SUCCESS       Configuration loaded.
-  @retval EFI_UNSUPPORTED   GOP is unavailable.
-**/
+/* Load persisted setup config and enumerate GOP modes. */
+/* Call BootGraphicsApplyMode first, then BeginUi. */
+/* @param ImageHandle EfiBoot image handle. */
+/* @retval EFI_SUCCESS Config loaded. */
+/* @retval EFI_UNSUPPORTED No GOP. */
 EFI_STATUS
 CsosSetupUtilityInit (
   IN EFI_HANDLE  ImageHandle
   );
 
-/**
-  Initialize the graphical UI on the current GOP mode.
-
-  Must be called after BootGraphicsApplyMode().
-
-  @retval EFI_SUCCESS       UI backend ready.
-  @retval EFI_UNSUPPORTED   Graphics or font unavailable.
-**/
+/* Init graphical UI on the current GOP mode. */
+/* Call after BootGraphicsApplyMode. */
+/* @retval EFI_SUCCESS UI ready. */
+/* @retval EFI_UNSUPPORTED No graphics or font. */
 EFI_STATUS
 CsosSetupUtilityBeginUi (
   VOID
   );
 
-/**
-  Display the Setup Utility GUI and wait for user action.
-
-  @param[out] BootRequested  TRUE when the user chooses to continue booting.
-
-  @retval EFI_SUCCESS  Setup session finished.
-**/
+/* Show setup GUI and wait for user action. */
+/* @param BootRequested TRUE if user chooses to boot. */
+/* @retval EFI_SUCCESS Session finished. */
 EFI_STATUS
 CsosSetupUtilityRun (
   OUT BOOLEAN  *BootRequested
   );
 
-/**
-  Wait for boot timeout. F2 enters setup; timeout continues boot.
-
-  @param[in]  TimeoutSeconds  Seconds to wait (0 skips waiting).
-  @param[out] EnterSetup      TRUE when the user presses F2.
-
-  @retval EFI_SUCCESS  Wait completed.
-**/
+/* Wait for boot timeout, F2 enters setup. */
+/* @param TimeoutSeconds Seconds to wait, 0 skips. */
+/* @param EnterSetup TRUE if user pressed F2. */
+/* @retval EFI_SUCCESS Wait done. */
 EFI_STATUS
 CsosSetupUtilityWaitForKey (
   IN  UINT16   TimeoutSeconds,
   OUT BOOLEAN  *EnterSetup
   );
 
-/**
-  Return the current setup configuration.
-
-  @param[out] Config  Configuration buffer.
-**/
+/* Return the current setup config. */
+/* @param Config Config buffer. */
 VOID
 CsosSetupUtilityGetConfig (
   OUT CSOS_BOOT_SETUP  *Config
   );
 
-/**
-  Release resources installed by CsosSetupUtilityInit()/BeginUi().
-**/
+/* Release resources from Init and BeginUi. */
 VOID
 CsosSetupUtilityFree (
   VOID
   );
 
-/**
-  Show a full-screen fatal boot error, then cold-reset the machine.
-
-  Draws a dark error page (title + step + status code) when graphics is
-  available, otherwise prints to ConOut. Waits up to 10 seconds for any
-  key, then resets unconditionally. Intended for errors that make it
-  impossible to continue booting (missing kernel, bad memory map, ...).
-
-  @param[in] Detail   Short failed-step description, e.g. L"LOAD KERNEL.ELF".
-  @param[in] Status   The failing EFI_STATUS.
-**/
+/* Show fatal boot error, then cold-reset. */
+/* Uses graphics if available, else ConOut. Waits 10s for a key. */
+/* @param Detail Failed step, e.g. L"LOAD KERNEL.ELF". */
+/* @param Status Failing EFI_STATUS. */
 VOID
 CsosShowFatalError (
   IN CONST CHAR16  *Detail,

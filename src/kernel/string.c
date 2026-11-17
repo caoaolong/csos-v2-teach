@@ -18,7 +18,7 @@ void kernel_strncpy(char *dst, const char *src, uint32_t size)
     if (!dst || !src || !size)
         return;
 
-    /* 安全语义：最多拷贝 size-1 字节，恒以 '\0' 结尾 */
+    /* 最多拷贝 size-1 字节，恒以 0 结尾 */
     while (i + 1 < size && src[i])
     {
         dst[i] = src[i];

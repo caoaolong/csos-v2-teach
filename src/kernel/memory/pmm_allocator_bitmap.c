@@ -2,12 +2,12 @@
 #include <kernel/memory/bitmap.h>
 #include <kernel/memory/pmm.h>
 
-/* 管理上限：512MB（QEMU 默认 128MB，bitmap 约 16KB） */
+/* 管理上限 512MB */
 #define PMM_MAX_PHYS (512ULL * 1024 * 1024)
 #define PMM_MAX_PAGES (PMM_MAX_PHYS / PAGE_SIZE)
 #define PMM_BITMAP_BYTES ((PMM_MAX_PAGES + 7) / 8)
 
-/* 1 = 已用，0 = 空闲 */
+/* 1 已用 0 空闲 */
 static uint8_t page_bitmap_storage[PMM_BITMAP_BYTES];
 static bitmap_t page_bitmap;
 static uint64_t managed_pages;
@@ -31,7 +31,7 @@ static int bitmap_allocator_init(uint64_t pages)
         return -1;
 
     bitmap_init(&page_bitmap, page_bitmap_storage, PMM_MAX_PAGES);
-    /* 全部标为已用，再由 init_pmm 按 Memory Map 放开可用区 */
+    /* 先全标已用，再放开可用区 */
     bitmap_set_all(&page_bitmap, 1);
     nr_free_pages = 0;
     managed_pages = pages;
@@ -108,7 +108,7 @@ static uint64_t bitmap_alloc_pages(uint64_t n)
     if (n == 0 || n > managed_pages)
         return (uint64_t)-1;
 
-    /* 首次适配：找第一个长度 >= n 的连续空闲段 */
+    /* 首次适配找连续空闲段 */
     for (i = 0; i + n <= managed_pages;)
     {
         if (bitmap_test(&page_bitmap, i))

@@ -19,11 +19,11 @@ void init_pic()
     outb(PIC1_CMD, ICW1_INIT | ICW1_ICW4);
     outb(PIC2_CMD, ICW1_INIT | ICW1_ICW4);
 
-    outb(PIC1_DATA, PIC_IRQ_BASE);     /* master 向量 32 */
-    outb(PIC2_DATA, PIC_IRQ_BASE + 8); /* slave 向量 40 */
+    outb(PIC1_DATA, PIC_IRQ_BASE);     /* 主片向量基址 32 */
+    outb(PIC2_DATA, PIC_IRQ_BASE + 8); /* 从片向量基址 40 */
 
-    outb(PIC1_DATA, 1 << 2); /* master: IRQ2 = cascade */
-    outb(PIC2_DATA, 2);      /* slave identity = 2 */
+    outb(PIC1_DATA, 1 << 2); /* 主片经 IRQ2 级联 */
+    outb(PIC2_DATA, 2);      /* 从片标识为 2 */
 
     outb(PIC1_DATA, ICW4_8086);
     outb(PIC2_DATA, ICW4_8086);

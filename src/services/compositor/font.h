@@ -3,8 +3,7 @@
 
 #include <stdint.h>
 
-/* 用户态 8x16 点阵（Terminus ter-116n，SIL OFL 1.1），数据见 font.c
- * （与内核 font.c 同源；compositor 执行 TEXT 命令时的光栅化用）。 */
+/* 用户态 8x16 点阵字库（Terminus ter-116n，SIL OFL 1.1） */
 #define COMP_FONT_W 8
 #define COMP_FONT_H 16
 

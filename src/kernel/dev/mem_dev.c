@@ -3,7 +3,7 @@
 #include <kernel/string.h>
 #include <kernel/vdev.h>
 
-/* Linux 兼容次设备号：null=3，zero=5 */
+/* null 次设备号 3，zero 为 5 */
 #define MEM_MINOR_NULL 3
 #define MEM_MINOR_ZERO 5
 
@@ -13,7 +13,7 @@ static int64_t null_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
     (void)f;
     (void)buf;
     (void)len;
-    return 0; /* EOF */
+    return 0; /* 读空 */
 }
 
 static int64_t null_write(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t len)
@@ -21,7 +21,7 @@ static int64_t null_write(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t 
     (void)dev;
     (void)f;
     (void)buf;
-    return (int64_t)len; /* 丢弃 */
+    return (int64_t)len; /* 丢弃写入 */
 }
 
 static int64_t zero_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
@@ -39,7 +39,7 @@ static int64_t zero_write(vdev_t *dev, vfs_file_t *f, const void *buf, uint64_t 
     (void)dev;
     (void)f;
     (void)buf;
-    return (int64_t)len; /* 丢弃 */
+    return (int64_t)len; /* 丢弃写入 */
 }
 
 static const vdev_char_ops_t g_null_ops = {

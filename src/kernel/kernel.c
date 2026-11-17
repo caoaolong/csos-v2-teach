@@ -35,10 +35,10 @@
 
 static void user_task()
 {
-    /* 当前任务即 user 任务：先装好 0/1/2 再进用户态 */
+    /* 当前任务即用户任务，先建标准流再进用户态 */
     fd_init_std(sched_current());
     user_enter_init(g_boot_config.init);
-    /* user_enter_* 不返回；防御性兜底 */
+    /* 用户入口不返回 */
     for (;;)
         __asm__ volatile("hlt");
 }
@@ -56,7 +56,7 @@ void kernel_main(boot_info_t *boot_info)
     init_vmm(boot_info);
     init_heap();
 
-    /* splash + 文本区初始化 */
+    /* 初始化启动画面与文本区 */
     fb_console_init_boot(boot_info);
     {
         uint32_t cols = 0;
