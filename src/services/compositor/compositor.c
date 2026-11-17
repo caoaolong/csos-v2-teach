@@ -388,7 +388,7 @@ int main()
 
         /* --- 键盘：只响应按下做日志，其余原样转发（回显归客户端） --- */
         errno = 0;
-        kr = read(kfd, kevs, sizeof(kevs));
+        kr = read(kfd, kevs, sizeof(g_kevs));
         if (kr > 0)
         {
             long nev = kr / (long)sizeof(input_event_t);
