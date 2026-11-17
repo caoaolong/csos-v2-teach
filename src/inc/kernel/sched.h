@@ -8,9 +8,8 @@
 /* 协作式 yield：软件中断，与 timer 共用 exception_frame 切换路径 */
 #define SCHED_YIELD_VECTOR 34
 
-/* 用户任务内核栈：2 页连续（8KB）。exec 的 VFS/ATA 调用链实测约 6KB，
- * 单页（4KB）会下溢进相邻任务的 kstack，表现为 wake 时 iret 帧被砸坏。
- * TODO: 加 guard 页 / 栈水位检查。 */
+/* 用户任务内核栈：2 页连续（8KB）。 */
+/* TODO：加 guard 页或栈水位检查。 */
 #define USER_KSTACK_PAGES 2
 #define USER_KSTACK_SIZE (USER_KSTACK_PAGES * 4096ULL)
 

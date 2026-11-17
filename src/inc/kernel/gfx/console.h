@@ -18,8 +18,9 @@ void fb_console_puts(const char *s);
 
 void fb_console_size(uint32_t *cols, uint32_t *rows);
 
-/* 屏幕仲裁：detach 后写屏/tick/光标全部停（输出只走串口），文字模型冻结；
- * attach 按文字模型重画整个文本区并恢复光标。panic 页无条件夺回。 */
+/* 屏幕仲裁：detach 后停写屏，文字模型冻结。 */
+/* attach 按文字模型重画并恢复光标。 */
+/* panic 页无条件夺回。 */
 void fb_console_detach();
 void fb_console_attach();
 

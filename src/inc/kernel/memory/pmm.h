@@ -37,11 +37,9 @@ typedef enum
     MEMORY_TYPE_OS_RESERVED_MAX = 0xFFFFFFFF
 } efi_memory_type;
 
-/*
- * 与 UEFI EFI_MEMORY_DESCRIPTOR 布局一致：
- * Type 后有 4 字节对齐填充，随后才是 64 位字段。
- * 遍历时仍须按 boot_info.descriptor_size 步进。
- */
+/* 与 UEFI 内存描述符布局一致。 */
+/* Type 后有 4 字节对齐填充。 */
+/* 遍历须按 descriptor_size 步进。 */
 typedef struct memory_descriptor
 {
     uint32_t type;
@@ -72,8 +70,8 @@ typedef struct boot_info
     uint64_t config_addr;
     uint64_t config_size;
 
-    /* 显示器物理尺寸（EDID 0x15/0x16，毫米；0=未知，按 96DPI 保底）。
-     * 追加在尾部，老 BootInfo（二进制）缺这两字段时读到 0 即保底，兼容。 */
+    /* 显示器物理尺寸（EDID，毫米；0 为未知，按 96DPI 保底）。 */
+    /* 缺字段时读到 0 即保底。 */
     uint32_t framebuffer_phys_w_mm;
     uint32_t framebuffer_phys_h_mm;
 } boot_info_t;
@@ -85,8 +83,9 @@ void init_pmm(boot_info_t *boot_info);
 uint64_t alloc_page();
 void free_page(uint64_t addr);
 
-/* 分配 / 释放 n 个连续物理页（用户任务 kstack 用 2 页防 exec 深调用栈溢出）；
- * 失败返回 PMM_INVALID_ADDR；addr 须页对齐。 */
+/* 分配或释放 n 个连续物理页。 */
+/* 失败返回 PMM_INVALID_ADDR。 */
+/* 地址须页对齐。 */
 uint64_t alloc_pages(uint64_t n);
 void free_pages(uint64_t addr, uint64_t n);
 

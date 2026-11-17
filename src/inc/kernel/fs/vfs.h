@@ -51,9 +51,7 @@ typedef struct vfs_dirent
     uint64_t size;
 } vfs_dirent_t;
 
-/*
- * Strategy 接口
- */
+/* Strategy 接口。 */
 typedef struct fs_driver
 {
     const char *name;

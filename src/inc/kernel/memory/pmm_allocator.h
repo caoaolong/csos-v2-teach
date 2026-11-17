@@ -4,10 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/*
- * 物理页分配器策略：抽象 alloc_page / free_page 及初始化阶段的区间标记。
- * 当前默认实现为 bitmap；后续可替换为 buddy、slab 等。
- */
+/* 物理页分配器策略接口。 */
 
 typedef struct pmm_allocator_ops
 {

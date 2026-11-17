@@ -5,17 +5,17 @@
 
 #define IDT_SIZE 0x100
 
-#define GATE_TYPE_IDT (0xE << 8)     // 中断门描述符（64 位 IDT type=0xE）
-#define GATE_TYPE_TRAP (0xF << 8)    // 陷阱门描述符（type=0xF）
-#define GATE_TYPE_SYSCALL (0xE << 8) // 用户态可触发的中断门（配合 DPL3）
-#define GATE_ATTR_P (1 << 15)        // 是否存在
-#define GATE_ATTR_DPL0 (0 << 13)     // 特权级0，最高特权级
-#define GATE_ATTR_DPL3 (3 << 13)     // 特权级3，最低权限
+#define GATE_TYPE_IDT (0xE << 8)     /* 中断门描述符（64 位 IDT type=0xE） */
+#define GATE_TYPE_TRAP (0xF << 8)    /* 陷阱门描述符（type=0xF） */
+#define GATE_TYPE_SYSCALL (0xE << 8) /* 用户态可触发的中断门（配合 DPL3） */
+#define GATE_ATTR_P (1 << 15)        /* 是否存在 */
+#define GATE_ATTR_DPL0 (0 << 13)     /* 特权级 0 */
+#define GATE_ATTR_DPL3 (3 << 13)     /* 特权级 3 */
 
 /* 与 interrupt.S 压栈顺序一致（低地址 → 高地址） */
 typedef struct exception_frame
 {
-    // 手动压栈
+    /* 手动压栈 */
     uint64_t r15;
     uint64_t r14;
     uint64_t r13;
@@ -33,7 +33,7 @@ typedef struct exception_frame
     uint64_t rax;
     uint64_t vector;
     uint64_t error_code;
-    // 自动压栈
+    /* 自动压栈 */
     uint64_t rip;
     uint64_t cs;
     uint64_t rflags;

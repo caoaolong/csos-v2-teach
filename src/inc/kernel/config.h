@@ -36,11 +36,9 @@ typedef struct boot_config
 
 extern boot_config_t g_boot_config;
 
-/*
- * 解析 BootInfo 中的 csos.cfg 原文并立即应用，只用静态存储。
- * 解析阶段全程静默；应用阶段含条件串口初始化（debug=serial 时）。
- * 必须在 init_pmm 之前调用。
- */
+/* 解析 BootInfo 中的 csos.cfg 原文并立即应用。 */
+/* 应用阶段含条件串口初始化。 */
+/* 必须在 init_pmm 之前调用。 */
 void parse_apply_boot_config(boot_info_t *boot);
 
 /* 在 serial_init 之后调用：打印生效的配置摘要 */
