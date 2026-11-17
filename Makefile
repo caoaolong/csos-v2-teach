@@ -82,6 +82,14 @@ install-compositor: $(COMP_ELF)
 install-term: $(TERM_ELF)
 	$(CSFS) $(INIT_IMG) cp $(TERM_ELF) $(TERM_DST) --partition $(INIT_PART) --mkdirs --overwrite
 
+# VirtualBox：把 qemu/ 启动目录 + 数据盘打包成可运行虚拟机
+# （需 Node.js 18+、npm link 的 csos-image，以及 VBoxManage；输出在 qemu/vbox/）
+VBOX_OUT = qemu/vbox
+VM_NAME ?= CSOS
+
+vbox: master
+	csos-image all --qemu qemu --out $(VBOX_OUT) --vm "$(VM_NAME)" --force
+
 # 启动qemu模拟环境
 qemu: master
 	qemu-system-x86_64 \
