@@ -37,6 +37,9 @@ typedef struct
 
     UINT64 config_addr; // csos.cfg raw text (EfiLoaderData pages, 0 if absent)
     UINT64 config_size; // bytes of csos.cfg (0 if absent)
+
+    UINT32 framebuffer_phys_w_mm; // panel physical width, mm (EDID; 0=unknown)
+    UINT32 framebuffer_phys_h_mm; // panel physical height, mm (EDID; 0=unknown)
 } BootInfo;
 
 typedef VOID (*KERNEL_ENTRY)(BootInfo *);
@@ -137,7 +140,6 @@ UefiMain(
     (VOID) SystemTable;
 
     ZeroMem(&SetupConfig, sizeof(SetupConfig));
-    SetupConfig.PreferEdid = 1;
 
     SetupInitialized = FALSE;
     Status = CsosSetupUtilityInit(ImageHandle);
@@ -278,6 +280,19 @@ UefiMain(
     {
         Print(L"EfiBoot: InitGraphics failed: %r (continue without FB)\n", Status);
         BootInfoPtr->framebuffer_base = 0;
+    }
+
+    BootInfoPtr->framebuffer_phys_w_mm = 0;
+    BootInfoPtr->framebuffer_phys_h_mm = 0;
+    {
+        UINT32 PhysW = 0;
+        UINT32 PhysH = 0;
+
+        if (!EFI_ERROR(BootGraphicsEdidPhysicalSize(&PhysW, &PhysH)))
+        {
+            BootInfoPtr->framebuffer_phys_w_mm = PhysW;
+            BootInfoPtr->framebuffer_phys_h_mm = PhysH;
+        }
     }
 
     if (SetupInitialized)

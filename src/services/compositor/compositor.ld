@@ -17,6 +17,6 @@ SECTIONS
     /DISCARD/ : { *(.note*) *(.comment*) *(.eh_frame*) }
 
     /* 上限 8 页：GUI 代码（光标/合成/字体）会持续膨胀，窗口余量充足
-     * （堆跟在映像末端之后，显存窗在 0x41800000，互不重叠） */
+     * （堆跟在映像末端之后，显存窗在 0x42000000，互不重叠） */
     ASSERT(. <= 0x41000000 + 8 * 0x1000, "compositor binary exceeds 8 pages")
 }

@@ -17,7 +17,7 @@
 #define TERM_FG 0x00E8E8E8u
 #define TERM_DIM_FG 0x00888888u
 
-#define TERM_MAX_COLS 128
+#define TERM_MAX_COLS 160
 #define TERM_MAX_ROWS 64
 
 static int g_cmdfd = -1; /* 写：渲染命令 */
@@ -26,10 +26,16 @@ static comp_reader_t g_evtr;
 
 static uint32_t g_wx;
 static uint32_t g_wy;
+static uint32_t g_ww; /* 窗口像素宽（居中留边时全窗铺底用） */
+static uint32_t g_wh; /* 窗口像素高 */
 static uint32_t g_cols;
 static uint32_t g_rows; /* 含底行状态行 */
 static uint32_t g_cx;
 static uint32_t g_cy;
+static uint32_t g_cw = COMP_FONT_W; /* 单元格像素宽 = 8*scale */
+static uint32_t g_ch = COMP_FONT_H; /* 单元格像素高 = 16*scale */
+static uint32_t g_ox;               /* 网格居中偏移（窗口相对） */
+static uint32_t g_oy;
 
 static char g_screen[TERM_MAX_ROWS][TERM_MAX_COLS];
 
@@ -95,11 +101,22 @@ static int send_text(uint32_t x, uint32_t y, uint32_t color,
     return (int)comp_send(g_cmdfd, COMP_MSG_TEXT, p, 14 + n);
 }
 
+/* 网格→窗口像素（含居中偏移） */
+static uint32_t cell_x(uint32_t cx)
+{
+    return g_ox + cx * g_cw;
+}
+
+static uint32_t cell_y(uint32_t cy)
+{
+    return g_oy + cy * g_ch;
+}
+
 static int draw_cell(uint32_t cx, uint32_t cy)
 {
     if (cx >= g_cols || cy + 1 >= g_rows)
         return 0;
-    return send_text(cx * COMP_FONT_W, cy * COMP_FONT_H, TERM_FG,
+    return send_text(cell_x(cx), cell_y(cy), TERM_FG,
                      &g_screen[cy][cx], 1);
 }
 
@@ -107,7 +124,7 @@ static int draw_row(uint32_t cy)
 {
     if (cy + 1 >= g_rows)
         return 0;
-    return send_text(0, cy * COMP_FONT_H, TERM_FG, g_screen[cy], g_cols);
+    return send_text(cell_x(0), cell_y(cy), TERM_FG, g_screen[cy], g_cols);
 }
 
 static int draw_status(void)
@@ -166,8 +183,8 @@ static int draw_status(void)
     buf[n++] = (char)('0' + (g_mbuttons & 7));
     while (n < g_cols)
         buf[n++] = ' ';
-    if (send_fill(0, (g_rows - 1) * COMP_FONT_H, g_cols * COMP_FONT_W,
-                  COMP_FONT_H, TERM_BG) != 0)
+    if (send_fill(cell_x(0), cell_y(g_rows - 1), g_cols * g_cw,
+                  g_ch, TERM_BG) != 0)
         return -1;
     for (i = 0; (unsigned long)i < n; i += TERM_MAX_COLS)
     {
@@ -175,8 +192,8 @@ static int draw_status(void)
 
         if (m > TERM_MAX_COLS)
             m = TERM_MAX_COLS;
-        if (send_text((uint32_t)((unsigned long)i * COMP_FONT_W),
-                      (g_rows - 1) * COMP_FONT_H, TERM_DIM_FG,
+        if (send_text(cell_x(0) + (uint32_t)((unsigned long)i * g_cw),
+                      cell_y(g_rows - 1), TERM_DIM_FG,
                       buf + i, m) != 0)
             return -1;
     }
@@ -187,8 +204,7 @@ static int full_redraw(void)
 {
     uint32_t cy;
 
-    if (send_fill(0, 0, g_cols * COMP_FONT_W, g_rows * COMP_FONT_H,
-                  TERM_BG) != 0)
+    if (send_fill(0, 0, g_ww, g_wh, TERM_BG) != 0)
         return -1;
     for (cy = 0; cy + 1 < g_rows; cy++)
     {
@@ -232,8 +248,8 @@ static int term_putc(char ch)
         {
             g_cx--;
             g_screen[g_cy][g_cx] = ' ';
-            if (send_fill(g_cx * COMP_FONT_W, g_cy * COMP_FONT_H,
-                          COMP_FONT_W, COMP_FONT_H, TERM_BG) != 0)
+            if (send_fill(cell_x(g_cx), cell_y(g_cy),
+                          g_cw, g_ch, TERM_BG) != 0)
                 return -1;
         }
         return 0;
@@ -274,8 +290,9 @@ static int term_puts(const char *s)
 static int term_handshake(void)
 {
     comp_hdr_t h;
-    comp_rect_t w;
+    comp_win_t w;
     int tries;
+    uint32_t scale;
 
     if (g_cmdfd >= 0)
         close(g_cmdfd);
@@ -320,17 +337,26 @@ static int term_handshake(void)
         return -1;
     g_wx = w.x;
     g_wy = w.y;
-    (void)g_wx;
-    (void)g_wy;
-    g_cols = w.w / COMP_FONT_W;
-    g_rows = w.h / COMP_FONT_H;
+    g_ww = w.w;
+    g_wh = w.h;
+    scale = w.scale < 1 ? 1 : w.scale;
+    if (scale > 4)
+        scale = 4;
+    g_cw = COMP_FONT_W * scale;
+    g_ch = COMP_FONT_H * scale;
+    g_cols = w.w / g_cw;
+    g_rows = w.h / g_ch;
     if (g_cols == 0 || g_rows < 2)
         return -1;
     if (g_cols > TERM_MAX_COLS)
         g_cols = TERM_MAX_COLS;
     if (g_rows > TERM_MAX_ROWS)
         g_rows = TERM_MAX_ROWS;
-    printf("term: win %ux%u grid %ux%u\n", w.w, w.h, g_cols, g_rows);
+    /* 网格小于窗口时居中（左右/上下留边，底色由 full_redraw 铺满） */
+    g_ox = (w.w > g_cols * g_cw) ? (w.w - g_cols * g_cw) / 2 : 0;
+    g_oy = (w.h > g_rows * g_ch) ? (w.h - g_rows * g_ch) / 2 : 0;
+    printf("term: win %ux%u scale %u grid %ux%u\n",
+           w.w, w.h, scale, g_cols, g_rows);
     return 0;
 }
 

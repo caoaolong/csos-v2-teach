@@ -8,7 +8,7 @@ GROUP(libc.a)
 SECTIONS
 {
     /* 基址 0x41200000：init 占 0x40002000 段，compositor 占 0x41000000 段，
-     * 显存窗 0x41800000 起，堆跟在映像末端之后，均不重叠 */
+     * 显存窗 0x42000000 起，堆跟在映像末端之后，均不重叠 */
     . = 0x41200000;
     .text : { *(.text.entry) *(.text*) }
     .rodata : { *(.rodata*) }

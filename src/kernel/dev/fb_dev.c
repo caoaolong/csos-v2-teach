@@ -5,7 +5,7 @@
 #include <kernel/vdev.h>
 #include <kernel/memory/vmm.h>
 
-/* fb0：只读字符设备，一次 read 返回 24 字节 fb_info_t（支持 pos 续读）。
+/* fb0：只读字符设备，一次 read 返回 32 字节 fb_info_t（支持 pos 续读）。
  * 映射显存用 fbmap()（SYS_FBMAP），不在这里做。 */
 
 static int64_t fb_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
@@ -18,7 +18,8 @@ static int64_t fb_read(vdev_t *dev, vfs_file_t *f, void *buf, uint64_t len)
     if (f->is_dir)
         return VFS_ERR_ISDIR;
     vmm_framebuffer_info(&info.phys_base, NULL, &info.width,
-                         &info.height, &info.pitch);
+                         &info.height, &info.pitch, &info.phys_w_mm,
+                         &info.phys_h_mm);
     info.bpp = 32;
     if (info.phys_base == 0)
         return VFS_ERR_NODEV; /* 无显存的机器 */

@@ -20,7 +20,7 @@
 #define COMP_MSG_TEXT 2 /* payload: u32 x,y,color; u16 len; u8 bytes[len] */
 
 /* S→C：窗口与输入 */
-#define COMP_MSG_WIN 1  /* payload: u32 x,y,w,h（屏坐标，客户端只读） */
+#define COMP_MSG_WIN 1  /* payload: comp_win_t（屏坐标 rect + 字号 scale） */
 #define COMP_MSG_EVTS 2 /* payload: input_event_t[n]（见 input.h，原样转发） */
 
 #define COMP_MAX_PAYLOAD 4000
@@ -39,6 +39,17 @@ typedef struct comp_rect
     uint32_t w;
     uint32_t h;
 } comp_rect_t;
+
+/* 服务端分配的窗口：屏坐标 rect + 字号 scale（>=1，整数放大）。
+ * 客户端网格 = w/(8*scale) x h/(16*scale)，TEXT 坐标仍按像素给。 */
+typedef struct comp_win
+{
+    uint32_t x;
+    uint32_t y;
+    uint32_t w;
+    uint32_t h;
+    uint32_t scale;
+} comp_win_t;
 
 /* 阻塞写完 len 字节（对端关闭返回 -1；满管靠 syscall 层阻塞等待） */
 static inline long comp_write_all(int fd, const void *buf, unsigned long len)

@@ -31,7 +31,6 @@
 #define STR_SUBTITLE L"Boot Configuration"
 #define STR_BOOT_TIMEOUT L"Boot Timeout (sec)"
 #define STR_AUTO_BOOT L"Auto Boot"
-#define STR_PREFER_EDID L"Prefer EDID Resolution"
 #define STR_GOP_MODE L"GOP Display Mode"
 #define STR_BTN_SAVE_BOOT L"Save & Boot"
 #define STR_BTN_BOOT L"Boot Now"
@@ -51,7 +50,6 @@ typedef enum
 {
     FocusBootTimeout = 0,
     FocusAutoBoot,
-    FocusPreferEdid,
     FocusGopMode,
     FocusActionSaveBoot,
     FocusActionBoot,
@@ -130,8 +128,8 @@ VOID SetupLoadDefaults(
     ZeroMem(Config, sizeof(*Config));
     Config->BootTimeout = CSOS_SETUP_DEFAULT_TIMEOUT;
     Config->AutoBoot = 1;
-    Config->PreferEdid = 1;
     Config->GopMode = 0;
+    Config->GopModeSet = 0;
     UnicodeSPrint(
         Config->CurrentGopModeDesc,
         sizeof(Config->CurrentGopModeDesc),
@@ -159,6 +157,20 @@ SetupLoadFromVariable(
     {
         SetupLoadDefaults(Config);
         return Status;
+    }
+
+    /*
+     * Clamp to the documented range: a stored timeout below the minimum
+     * (e.g. 0 from before the rule existed) self-heals to 3 seconds.
+     * This also rescues machines already stuck at timeout 0.
+     */
+    if (Config->BootTimeout < CSOS_SETUP_MIN_TIMEOUT)
+    {
+        Config->BootTimeout = CSOS_SETUP_MIN_TIMEOUT;
+    }
+    else if (Config->BootTimeout > CSOS_SETUP_MAX_TIMEOUT)
+    {
+        Config->BootTimeout = CSOS_SETUP_MAX_TIMEOUT;
     }
 
     return EFI_SUCCESS;
@@ -597,7 +609,6 @@ VOID DrawSetupScreen(
     CHAR16 Buf[48];
     EFI_GRAPHICS_OUTPUT_BLT_PIXEL *RowBg;
     EFI_GRAPHICS_OUTPUT_BLT_PIXEL *LabelClr;
-    BOOLEAN GopDisabled;
 
     if (!mGfxReady)
     {
@@ -624,7 +635,6 @@ VOID DrawSetupScreen(
     RowY = CardY + 88;
     LabelX = CardX + 28;
     ValueX = CardX + CardW - 260;
-    GopDisabled = (mSetupConfig.PreferEdid != 0);
 
     //
     // Boot timeout row
@@ -663,25 +673,10 @@ VOID DrawSetupScreen(
     RowY += RowH;
 
     //
-    // Prefer EDID toggle
-    //
-    RowBg = (mFocus == FocusPreferEdid) ? &mClrFocus : &mClrSurface;
-    GfxFillRect(CardX + 12, RowY, CardW - 24, RowH, RowBg);
-    if (mFocus == FocusPreferEdid)
-    {
-        GfxFillRect(CardX + 12, RowY, 3, RowH, &mClrAccent);
-    }
-
-    GfxDrawText(LabelX, RowY + 16, &mClrText, RowBg, STR_PREFER_EDID);
-    GfxDrawToggle(ValueX + 60, RowY + 16, 52, 24, mSetupConfig.PreferEdid != 0, FALSE);
-
-    RowY += RowH;
-
-    //
-    // GOP mode row
+    // GOP mode row (always selectable; stored to NVRAM on Save & Boot)
     //
     RowBg = (mFocus == FocusGopMode) ? &mClrFocus : &mClrSurface;
-    LabelClr = GopDisabled ? &mClrMuted : &mClrText;
+    LabelClr = &mClrText;
     GfxFillRect(CardX + 12, RowY, CardW - 24, RowH, RowBg);
     if (mFocus == FocusGopMode)
     {
@@ -693,16 +688,13 @@ VOID DrawSetupScreen(
     GfxDrawText(
         ValueX,
         RowY + 16,
-        GopDisabled ? &mClrMuted : &mClrAccent,
+        &mClrAccent,
         RowBg,
         mSetupConfig.CurrentGopModeDesc);
-    if (!GopDisabled)
-    {
-        GfxDrawBorder(ValueX + 150, RowY + 12, 36, 28, &mClrBorder);
-        GfxDrawText(ValueX + 160, RowY + 16, &mClrMuted, RowBg, L"<");
-        GfxDrawBorder(ValueX + 196, RowY + 12, 36, 28, &mClrBorder);
-        GfxDrawText(ValueX + 206, RowY + 16, &mClrMuted, RowBg, L">");
-    }
+    GfxDrawBorder(ValueX + 150, RowY + 12, 36, 28, &mClrBorder);
+    GfxDrawText(ValueX + 160, RowY + 16, &mClrMuted, RowBg, L"<");
+    GfxDrawBorder(ValueX + 196, RowY + 12, 36, 28, &mClrBorder);
+    GfxDrawText(ValueX + 206, RowY + 16, &mClrMuted, RowBg, L">");
 
     BtnY = CardY + CardH - 72;
     BtnH = 40;
@@ -815,12 +807,12 @@ VOID AdjustFocusedValue(
     case FocusBootTimeout:
         if (Delta > 0)
         {
-            if (mSetupConfig.BootTimeout < 60)
+            if (mSetupConfig.BootTimeout < CSOS_SETUP_MAX_TIMEOUT)
             {
                 mSetupConfig.BootTimeout++;
             }
         }
-        else if (mSetupConfig.BootTimeout > 0)
+        else if (mSetupConfig.BootTimeout > CSOS_SETUP_MIN_TIMEOUT)
         {
             mSetupConfig.BootTimeout--;
         }
@@ -831,16 +823,7 @@ VOID AdjustFocusedValue(
         mSetupConfig.AutoBoot = (mSetupConfig.AutoBoot == 0) ? 1 : 0;
         break;
 
-    case FocusPreferEdid:
-        mSetupConfig.PreferEdid = (mSetupConfig.PreferEdid == 0) ? 1 : 0;
-        break;
-
     case FocusGopMode:
-        if (mSetupConfig.PreferEdid != 0)
-        {
-            break;
-        }
-
         if (mNumGopModes == 0)
         {
             break;
@@ -856,6 +839,7 @@ VOID AdjustFocusedValue(
                                    (UINT32)mNumGopModes;
         }
 
+        mSetupConfig.GopModeSet = 1;
         UpdateCurrentGopModeDesc(&mSetupConfig);
         break;
 

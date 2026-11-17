@@ -36,3 +36,19 @@ BootGraphicsSelectMode (
   IN  CONST CSOS_SETUP_CONFIGURATION  *Setup,
   OUT UINT32                          *ModeIndex
   );
+
+/**
+  Report the panel physical size from EDID (millimeters, 0 = unknown).
+
+  @param[out] WidthMm   Physical width in mm (0 if unavailable).
+  @param[out] HeightMm  Physical height in mm (0 if unavailable).
+
+  @retval EFI_SUCCESS            Size reported (both nonzero).
+  @retval EFI_NOT_FOUND          No usable EDID / unknown dimensions.
+  @retval EFI_INVALID_PARAMETER  NULL output pointer.
+**/
+EFI_STATUS
+BootGraphicsEdidPhysicalSize (
+  OUT UINT32  *WidthMm,
+  OUT UINT32  *HeightMm
+  );

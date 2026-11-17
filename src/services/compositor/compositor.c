@@ -20,6 +20,8 @@ static uint32_t g_stride;
 static uint32_t g_width;
 static uint32_t g_height;
 static comp_rect_t g_win;
+static uint32_t g_scale = 1; /* 字号整数倍率：DPI>140 用 2x，上限 2 */
+static uint32_t g_phys_w_mm; /* 显示器物理宽（EDID，0=未知） */
 
 static uint32_t g_cx;
 static uint32_t g_cy;
@@ -111,30 +113,40 @@ static void comp_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t c
     }
 }
 
-/* 在窗口内画一个字形（屏坐标左上角，越界像素丢弃） */
+/* 在窗口内画一个字形（屏坐标左上角，越界像素丢弃；按 g_scale 放大） */
 static void comp_glyph(uint32_t x, uint32_t y, char ch, uint32_t fg, uint32_t bg)
 {
     const uint8_t *g = comp_font_glyph(ch);
     uint32_t r;
     uint32_t c;
+    uint32_t sx;
+    uint32_t sy;
 
     for (r = 0; r < COMP_FONT_H; r++)
     {
-        uint8_t bits;
-        uint32_t py;
+        uint8_t bits = g[r];
 
-        if (y + r < g_win.y || y + r >= g_win.y + g_win.h || y + r >= g_height)
-            continue;
-        py = y + r;
-        bits = g[r];
-        for (c = 0; c < COMP_FONT_W; c++)
+        for (sy = 0; sy < g_scale; sy++)
         {
-            uint32_t px = x + c;
+            uint32_t py = y + r * g_scale + sy;
 
-            if (px < g_win.x || px >= g_win.x + g_win.w || px >= g_width)
+            if (py < g_win.y || py >= g_win.y + g_win.h || py >= g_height)
                 continue;
-            g_px[(unsigned long)py * g_stride + px] =
-                (bits & (0x80u >> c)) ? fg : bg;
+            for (c = 0; c < COMP_FONT_W; c++)
+            {
+                uint32_t color =
+                    (bits & (0x80u >> c)) ? fg : bg;
+
+                for (sx = 0; sx < g_scale; sx++)
+                {
+                    uint32_t px = x + c * g_scale + sx;
+
+                    if (px < g_win.x || px >= g_win.x + g_win.w ||
+                        px >= g_width)
+                        continue;
+                    g_px[(unsigned long)py * g_stride + px] = color;
+                }
+            }
         }
     }
 }
@@ -176,8 +188,8 @@ static void exec_text(const uint8_t *p, unsigned long len)
     if (14 + n > len)
         return;
     for (i = 0; i < n; i++)
-        comp_glyph(g_win.x + x + (uint32_t)(i * COMP_FONT_W), g_win.y + y,
-                   (char)p[14 + i], color, COMP_BG_RGB);
+        comp_glyph(g_win.x + x + (uint32_t)(i * COMP_FONT_W * g_scale),
+                   g_win.y + y, (char)p[14 + i], color, COMP_BG_RGB);
     cursor_paint(g_cx, g_cy, 0); /* 文本盖住光标时重画 */
 }
 
@@ -191,7 +203,7 @@ static int forward_events(const input_event_t *evs, long nev)
 /* 与客户端握手：建 fifo → 开两端（阻塞等对端）→ 下发窗口 */
 static int ipc_handshake(void)
 {
-    comp_rect_t w;
+    comp_win_t w;
 
     if (g_cmdfd >= 0)
         close(g_cmdfd);
@@ -229,7 +241,13 @@ static int ipc_handshake(void)
     g_win.y = 0;
     g_win.w = g_width;
     g_win.h = g_height;
-    w = g_win;
+    w.x = g_win.x;
+    w.y = g_win.y;
+    w.w = g_win.w;
+    w.h = g_win.h;
+    w.scale = g_scale;
+    printf("compositor: win %ux%u scale %u (phys %umm)\n",
+           g_width, g_height, g_scale, g_phys_w_mm);
     if (comp_send(g_evtfd, COMP_MSG_WIN, &w, sizeof(w)) != 0)
     {
         printf("compositor: send WIN failed\n");
@@ -280,6 +298,19 @@ int main()
     g_stride = info.pitch / 4;
     g_width = info.width;
     g_height = info.height;
+    g_phys_w_mm = info.phys_w_mm;
+    /* DPI 定字号：dpi = 25.4*px/mm，>140 用 2x；无物理尺寸时按高度保底。 */
+    g_scale = 1;
+    if (g_phys_w_mm != 0 && g_width != 0)
+    {
+        if ((uint64_t)254 * (uint64_t)g_width >
+            (uint64_t)1400 * (uint64_t)g_phys_w_mm)
+            g_scale = 2;
+    }
+    else if (g_height >= 1600)
+    {
+        g_scale = 2;
+    }
     for (y = 0; y < g_height; y++)
     {
         for (x = 0; x < g_width; x++)

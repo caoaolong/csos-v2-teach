@@ -14,24 +14,57 @@
 #include <Protocol/GraphicsOutput.h>
 
 #include "BootGraphics.h"
+#include "EdidParse.h"
 
 STATIC
 BOOLEAN
-GetEdidPreferredResolution (
-  OUT UINT32  *Width,
-  OUT UINT32  *Height
+GetEdidBlob (
+  OUT UINT8   **Edid,
+  OUT UINT32  *Size
+  );
+
+EFI_STATUS
+BootGraphicsEdidPhysicalSize (
+  OUT UINT32  *WidthMm,
+  OUT UINT32  *HeightMm
+  )
+{
+  UINT8   *Edid;
+  UINT32  Size;
+  uint32_t Wmm;
+  uint32_t Hmm;
+
+  if ((WidthMm == NULL) || (HeightMm == NULL)) {
+    return EFI_INVALID_PARAMETER;
+  }
+  if (!GetEdidBlob (&Edid, &Size)) {
+    return EFI_NOT_FOUND;
+  }
+  if (EdidParsePhysicalSize (Edid, Size, &Wmm, &Hmm) != 0) {
+    return EFI_NOT_FOUND;
+  }
+  *WidthMm  = (UINT32)Wmm;
+  *HeightMm = (UINT32)Hmm;
+  return EFI_SUCCESS;
+}
+
+/**
+  Locate the EDID blob (Active preferred, Discovered as fallback).
+  Shared by the physical-size query.
+**/
+STATIC
+BOOLEAN
+GetEdidBlob (
+  OUT UINT8   **Edid,
+  OUT UINT32  *Size
   )
 {
   EFI_STATUS                       Status;
   EFI_EDID_ACTIVE_PROTOCOL         *EdidActive;
   EFI_EDID_DISCOVERED_PROTOCOL     *EdidDiscovered;
-  UINT8                            *Edid;
-  UINT32                           Size;
-  UINT32                           X;
-  UINT32                           Y;
 
-  Edid = NULL;
-  Size = 0;
+  *Edid = NULL;
+  *Size = 0;
 
   Status = gBS->LocateProtocol (
                   &gEfiEdidActiveProtocolGuid,
@@ -42,44 +75,26 @@ GetEdidPreferredResolution (
       (EdidActive->Edid != NULL) &&
       (EdidActive->SizeOfEdid >= 128))
   {
-    Edid = EdidActive->Edid;
-    Size = EdidActive->SizeOfEdid;
-  } else {
-    Status = gBS->LocateProtocol (
-                    &gEfiEdidDiscoveredProtocolGuid,
-                    NULL,
-                    (VOID **)&EdidDiscovered
-                    );
-    if (!EFI_ERROR (Status) &&
-        (EdidDiscovered->Edid != NULL) &&
-        (EdidDiscovered->SizeOfEdid >= 128))
-    {
-      Edid = EdidDiscovered->Edid;
-      Size = EdidDiscovered->SizeOfEdid;
-    }
+    *Edid = EdidActive->Edid;
+    *Size = EdidActive->SizeOfEdid;
+    return TRUE;
   }
 
-  if ((Edid == NULL) || (Size < 128)) {
-    return FALSE;
+  Status = gBS->LocateProtocol (
+                  &gEfiEdidDiscoveredProtocolGuid,
+                  NULL,
+                  (VOID **)&EdidDiscovered
+                  );
+  if (!EFI_ERROR (Status) &&
+      (EdidDiscovered->Edid != NULL) &&
+      (EdidDiscovered->SizeOfEdid >= 128))
+  {
+    *Edid = EdidDiscovered->Edid;
+    *Size = EdidDiscovered->SizeOfEdid;
+    return TRUE;
   }
 
-  if ((Edid[0] != 0x00) || (Edid[1] != 0xFF)) {
-    return FALSE;
-  }
-
-  if ((Edid[54] == 0x00) && (Edid[55] == 0x00)) {
-    return FALSE;
-  }
-
-  X = (UINT32)Edid[56] | (((UINT32)(Edid[58] & 0xF0)) << 4);
-  Y = (UINT32)Edid[59] | (((UINT32)(Edid[61] & 0xF0)) << 4);
-  if ((X < 640) || (Y < 480)) {
-    return FALSE;
-  }
-
-  *Width  = X;
-  *Height = Y;
-  return TRUE;
+  return FALSE;
 }
 
 EFI_STATUS
@@ -88,17 +103,9 @@ BootGraphicsSelectMode (
   OUT UINT32                          *ModeIndex
   )
 {
-  EFI_STATUS                            Status;
-  EFI_GRAPHICS_OUTPUT_PROTOCOL          *Gop;
-  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *ModeInfo;
-  UINTN                                 SizeOfInfo;
-  UINT32                                Mode;
-  UINT32                                BestMode;
-  UINT32                                BestScore;
-  UINT32                                Score;
-  UINT32                                TargetW;
-  UINT32                                TargetH;
-  BOOLEAN                               HasTarget;
+  EFI_STATUS                   Status;
+  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
+  UINT32                       Mode;
 
   if (ModeIndex == NULL) {
     return EFI_INVALID_PARAMETER;
@@ -113,50 +120,20 @@ BootGraphicsSelectMode (
     return EFI_UNSUPPORTED;
   }
 
-  BestMode = Gop->Mode->Mode;
-  if ((Setup != NULL) && (Setup->PreferEdid == 0)) {
-    if (Setup->GopMode < Gop->Mode->MaxMode) {
-      BestMode = Setup->GopMode;
-    }
-
-    *ModeIndex = BestMode;
-    return EFI_SUCCESS;
+  /*
+   * No auto-selection here: the user picks a mode in Setup Utility and
+   * the choice persists in NVRAM (GopModeSet). Without a stored choice,
+   * keep whatever mode the firmware booted with.
+   */
+  Mode = Gop->Mode->Mode;
+  if ((Setup != NULL) && (Setup->GopModeSet != 0) &&
+      (Setup->GopMode < Gop->Mode->MaxMode)) {
+    Mode = Setup->GopMode;
   }
 
-  HasTarget = GetEdidPreferredResolution (&TargetW, &TargetH);
-  if (!HasTarget) {
-    *ModeIndex = BestMode;
-    return EFI_SUCCESS;
-  }
-
-  BestScore = 0xFFFFFFFFu;
-  for (Mode = 0; Mode < Gop->Mode->MaxMode; Mode++) {
-    Status = Gop->QueryMode (Gop, Mode, &SizeOfInfo, &ModeInfo);
-    if (EFI_ERROR (Status) || (ModeInfo == NULL)) {
-      continue;
-    }
-
-    if (ModeInfo->PixelFormat == PixelBltOnly) {
-      FreePool (ModeInfo);
-      continue;
-    }
-
-    Score = (ModeInfo->HorizontalResolution > TargetW
-                 ? ModeInfo->HorizontalResolution - TargetW
-                 : TargetW - ModeInfo->HorizontalResolution) +
-            (ModeInfo->VerticalResolution > TargetH
-                 ? ModeInfo->VerticalResolution - TargetH
-                 : TargetH - ModeInfo->VerticalResolution);
-
-    if (Score < BestScore) {
-      BestScore = Score;
-      BestMode  = Mode;
-    }
-
-    FreePool (ModeInfo);
-  }
-
-  *ModeIndex = BestMode;
+  Print (L"EfiBoot: GOP mode %u%s\n",
+         Mode, (Mode == Gop->Mode->Mode) ? L" (current)" : L" (stored)");
+  *ModeIndex = Mode;
   return EFI_SUCCESS;
 }
 

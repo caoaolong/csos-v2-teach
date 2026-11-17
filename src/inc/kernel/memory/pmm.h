@@ -71,6 +71,11 @@ typedef struct boot_info
 
     uint64_t config_addr;
     uint64_t config_size;
+
+    /* 显示器物理尺寸（EDID 0x15/0x16，毫米；0=未知，按 96DPI 保底）。
+     * 追加在尾部，老 BootInfo（二进制）缺这两字段时读到 0 即保底，兼容。 */
+    uint32_t framebuffer_phys_w_mm;
+    uint32_t framebuffer_phys_h_mm;
 } boot_info_t;
 
 /* 扫描 Memory Map，建立空闲页 bitmap，标记内核占用页 */

@@ -53,7 +53,8 @@ void unmap_user_range(uint64_t start, uint64_t end);
 /* 显存描述（无显存时全 0），供 fb0 设备与 fbmap 用；任一指针可传 NULL 跳过 */
 void vmm_framebuffer_info(uint64_t *base_out, uint64_t *size_out,
                           uint32_t *width_out, uint32_t *height_out,
-                          uint32_t *pitch_out);
+                          uint32_t *pitch_out, uint32_t *phys_w_mm_out,
+                          uint32_t *phys_h_mm_out);
 
 uint64_t read_cr2();
 uint64_t read_cr3();

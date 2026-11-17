@@ -185,7 +185,7 @@ static void do_sys_fbmap(exception_frame_t *frame)
         frame->rax = (uint64_t)-1;
         return;
     }
-    vmm_framebuffer_info(&base, &size, NULL, NULL, NULL);
+    vmm_framebuffer_info(&base, &size, NULL, NULL, NULL, NULL, NULL);
     if (base == 0 || size == 0)
     {
         frame->rax = (uint64_t)-1; /* 无显存的机器 */
@@ -475,7 +475,7 @@ static void do_sys_lseek(exception_frame_t *frame)
 
 /* brk：rdi=new_brk（0=查询当前值）；成功返回调整后 brk，失败返回 -1。
  * 堆 == [heap_base, ALIGN_UP(heap_brk)) 必已映射，上界卡在 USER_FB_BASE
- * （顶部 8MB 是显存映射窗，堆不得进入）。 */
+ * （顶部 32MB 是显存映射窗，堆不得进入）。 */
 static void do_sys_brk(exception_frame_t *frame)
 {
     task_t *cur = sched_current();

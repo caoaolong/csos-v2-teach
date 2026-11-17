@@ -1,4 +1,4 @@
-﻿#include <kernel/kernel_layout.h>
+#include <kernel/kernel_layout.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/serial.h>
 #include <kernel/string.h>
@@ -102,6 +102,8 @@ static uint64_t g_fb_size;
 static uint32_t g_fb_width;
 static uint32_t g_fb_height;
 static uint32_t g_fb_pitch;
+static uint32_t g_fb_phys_w_mm;
+static uint32_t g_fb_phys_h_mm;
 
 static int map_framebuffer(boot_info_t *boot)
 {
@@ -126,6 +128,8 @@ static int map_framebuffer(boot_info_t *boot)
     g_fb_width = boot->framebuffer_width;
     g_fb_height = boot->framebuffer_height;
     g_fb_pitch = boot->framebuffer_pixels_per_scanline * 4u;
+    g_fb_phys_w_mm = boot->framebuffer_phys_w_mm;
+    g_fb_phys_h_mm = boot->framebuffer_phys_h_mm;
 
     for (pa = base; pa < end; pa += PAGE_SIZE)
     {
@@ -144,7 +148,8 @@ static int map_framebuffer(boot_info_t *boot)
 
 void vmm_framebuffer_info(uint64_t *base_out, uint64_t *size_out,
                           uint32_t *width_out, uint32_t *height_out,
-                          uint32_t *pitch_out)
+                          uint32_t *pitch_out, uint32_t *phys_w_mm_out,
+                          uint32_t *phys_h_mm_out)
 {
     if (base_out != NULL)
         *base_out = g_fb_base;
@@ -156,6 +161,10 @@ void vmm_framebuffer_info(uint64_t *base_out, uint64_t *size_out,
         *height_out = g_fb_height;
     if (pitch_out != NULL)
         *pitch_out = g_fb_pitch;
+    if (phys_w_mm_out != NULL)
+        *phys_w_mm_out = g_fb_phys_w_mm;
+    if (phys_h_mm_out != NULL)
+        *phys_h_mm_out = g_fb_phys_h_mm;
 }
 
 int map_page_in(uint64_t *pml4, uint64_t vaddr, uint64_t paddr, uint64_t flags)

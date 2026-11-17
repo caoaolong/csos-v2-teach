@@ -7,11 +7,11 @@
 #define USER_STACK_TOP (USER_STACK_VADDR + 0x1000ULL)
 
 /* 用户地址空间范围：init/compositor 映像 + 用户栈；exec 时整体拆除重建。
- * 顶部 8MB 预留给显存映射（USER_FB_BASE..USER_IMAGE_END），堆不得进入。 */
+ * 顶部 32MB 预留给显存映射（USER_FB_BASE..USER_IMAGE_END），堆不得进入。 */
 #define USER_IMAGE_BASE 0x40000000ULL
-#define USER_IMAGE_END 0x42000000ULL
-#define USER_FB_BASE 0x41800000ULL
-#define USER_FB_MAX_SIZE (0x800000ULL)
+#define USER_IMAGE_END 0x44000000ULL
+#define USER_FB_BASE 0x42000000ULL
+#define USER_FB_MAX_SIZE (0x2000000ULL)
 
 /* 单次 exec 允许的最大参数/环境个数（栈预算内） */
 #define EXEC_MAX_ARGS 16
