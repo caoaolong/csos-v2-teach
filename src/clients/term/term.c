@@ -488,6 +488,12 @@ int main()
                 }
                 continue;
             }
+            if (h->type == COMP_MSG_CLOSE)
+            {
+                /* 服务端请求关闭：回 DESTROY 后正常退出（init 见 0 不重启） */
+                comp_send(g_cmdfd, COMP_MSG_DESTROY, NULL, 0);
+                exit(0);
+            }
             if (h->type != COMP_MSG_EVTS)
                 continue;
             {

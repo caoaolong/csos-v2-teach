@@ -3,19 +3,6 @@
 
 #include <stdint.h>
 
-/*
- * compositor ↔ client 窗口协议（v1：单客户端独占一个窗口）。
- * 建窗：客户端先发 CREATE（期望客户区 w×h，0=最大化；name[32] 为标题）。
- * compositor 分配（有最终决定权）后回 WIN_GEOM（客户区 rect+scale）与 FOCUS。
- * 客户端只在客户区坐标内绘图；标题栏/边框由 compositor 画（服务端装饰）。
- * 重画时发 EXPOSE（damage 区，全 0 为整窗）；焦点变化发 FOCUS（失焦标题栏变灰）。
- * 退出前发 DESTROY；直接断开视为隐式 DESTROY（EOF 感知）。
- * MOVE_REQ 建议窗口左上角（屏坐标）；compositor 裁剪后生效，再回 WIN_GEOM+EXPOSE。
- * 光标移动后下发 CURSOR（绝对屏坐标，已钳制；仅变化时发送）；
- * 客户端直接同步，不再自行累加相对位移（相对位移经钳制后与实际位置不一致）。
- * 多客户端（共享 fifo 字节流交错）暂不支持：第二路 CREATE 会被忽略。
- */
-
 #define COMP_CMD_FIFO "/pipe/comp-cmd"
 #define COMP_EVT_FIFO "/pipe/comp-evt"
 
@@ -37,6 +24,7 @@
 #define COMP_MSG_EXPOSE 5   /* payload: comp_rect（窗口相对 damage 区，全 0=整窗） */
 #define COMP_MSG_EVTS 2     /* payload: input_event_t[n]（见 input.h，原样转发） */
 #define COMP_MSG_CURSOR 6   /* payload: comp_cursor_t（光标绝对屏坐标，已钳制） */
+#define COMP_MSG_CLOSE 7    /* S→C 关窗通知：空 payload；客户端回 DESTROY 后退出 */
 
 #define COMP_MAX_PAYLOAD 2048
 

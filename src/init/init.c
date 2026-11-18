@@ -74,8 +74,26 @@ int main()
 
         printf("reaped pid=%ld exit=%d\n", pid, status);
         if (pid == compositor_pid)
-            compositor_pid = start_compositor();
+        {
+            /* exit 0=主动退出，不再拉起；崩溃才重启 */
+            if (status == 0)
+            {
+                printf("compositor exited cleanly, no respawn\n");
+                compositor_pid = -1;
+            }
+            else
+                compositor_pid = start_compositor();
+        }
         if (pid == term_pid)
-            term_pid = start_term();
+        {
+            /* 用户关窗后 term 以 0 退出：不再拉起，桌面保持空窗 */
+            if (status == 0)
+            {
+                printf("term closed, no respawn\n");
+                term_pid = -1;
+            }
+            else
+                term_pid = start_term();
+        }
     }
 }

@@ -14,6 +14,11 @@
 #define COMP_TITLE_IDLE 0x00606060u
 #define COMP_TITLE_H 28 /* 未缩放标题栏高，实际乘 g_scale */
 #define COMP_BORDER 1
+#define MOUSE_SPEED 2 /* 指针加速：宿主走 1 像素，guest 走 2 像素，免得够不着边 */
+#define TASKBAR_H 28 /* 未缩放任务栏高，实际乘 g_scale */
+#define DESK_STRIPE 0x00161B21u /* 壁纸暗纹 */
+#define TASKBAR_BG 0x002A2A30u /* 任务栏底 */
+#define TASKBTN_FACE 0x00383840u /* 任务栏按钮面 */
 
 /* v1 窗口机制：单客户端独占一个窗口 */
 /* g_frame 含标题栏/边框；g_win 为客户区（裁剪与坐标原点） */
@@ -29,6 +34,12 @@ static int g_win_valid; /* 0=等 CREATE */
 static char g_win_title[32];
 static uint32_t g_mbuttons; /* 按键电平：bit0 左 bit1 右 bit2 中 */
 static int g_dragging;      /* 标题栏拖拽中 */
+static int g_close_armed;   /* 在关闭钮上按下，松开即关窗 */
+static int g_spawn_armed;   /* 在任务栏 term 钮上按下，松开即拉起 */
+static int g_spawn_pending; /* 已 fork 等对端 CREATE；防连点起两个 */
+static int g_spawn_ttl;     /* pending 超时计数，CREATE 前消费完则清 pending */
+/* 握手完成：两端 fifo 均已打开并配对；断线后置 0，下个 CREATE 重配 evt 端 */
+static int g_hs_ok;
 static int g_drag_ox;       /* 抓取点相对窗左上角偏移 */
 static int g_drag_oy;
 static uint32_t g_scale = 1; /* 字号整数倍率：DPI>140 用 2x，上限 2 */
@@ -114,17 +125,20 @@ static void cursor_paint(uint32_t cx, uint32_t cy, int erase)
     g_cursor_visible = 1;
 }
 
+static void clear_screen(void); /* 定义在后：重画整屏桌面 */
+static void paint_desktop_rect(uint32_t x, uint32_t y, uint32_t w,
+                               uint32_t h); /* 定义在后：壁纸 + 任务栏 */
+
+/* 任务栏高（像素） */
+static uint32_t taskbar_h(void)
+{
+    return TASKBAR_H * g_scale;
+}
+
 static void clear_screen(void)
 {
-    uint32_t x;
-    uint32_t y;
-
     g_cursor_visible = 0; /* 整屏重写，保存区失效 */
-    for (y = 0; y < g_height; y++)
-    {
-        for (x = 0; x < g_width; x++)
-            g_px[(unsigned long)y * g_stride + x] = COMP_BG_RGB;
-    }
+    paint_desktop_rect(0, 0, g_width, g_height);
 }
 
 static uint32_t clamp_u32(int v, uint32_t max)
@@ -213,6 +227,96 @@ static void comp_glyph(uint32_t x, uint32_t y, char ch, uint32_t fg, uint32_t bg
     comp_glyph_clip(x, y, ch, fg, bg, &g_win);
 }
 
+/* 任务栏 term 按钮区（屏坐标）；矮屏无任务栏时 w=h=0 */
+static void taskbtn_rect(comp_rect_t *r)
+{
+    uint32_t bh = taskbar_h();
+    uint32_t bw;
+    uint32_t bh2;
+
+    r->x = 0;
+    r->y = 0;
+    r->w = 0;
+    r->h = 0;
+    if (g_height <= bh)
+        return;
+    bw = (uint32_t)(4 * COMP_FONT_W + 12) * g_scale;
+    bh2 = bh > 8 * g_scale ? bh - 8 * g_scale : bh;
+    r->x = 4 * g_scale;
+    r->y = g_height - bh + (bh > bh2 ? (bh - bh2) / 2 : 0);
+    r->w = bw;
+    r->h = bh2;
+}
+
+/* 点是否落在任务栏 term 钮内 */
+static int in_taskbtn(uint32_t x, uint32_t y)
+{
+    comp_rect_t b;
+
+    taskbtn_rect(&b);
+    if (b.w == 0)
+        return 0;
+    return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+}
+
+/* 重画桌面区（壁纸条纹 + 任务栏 + term 按钮）：不碰光标，调用方先藏光标 */
+static void paint_desktop_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
+{
+    comp_rect_t scr;
+    comp_rect_t clip;
+    uint32_t bh;
+    uint32_t by;
+    uint32_t ry0;
+    uint32_t ry1;
+    uint32_t j;
+    uint32_t k;
+    comp_rect_t btn;
+    uint32_t tyy;
+    static const char tlabel[4] = {'t', 'e', 'r', 'm'};
+
+    scr.x = 0;
+    scr.y = 0;
+    scr.w = g_width;
+    scr.h = g_height;
+    /* 壁纸：底色 + 每 8 像素一条暗纹 */
+    comp_fill_clip(x, y, w, h, COMP_BG_RGB, &scr);
+    for (j = (y + 7) / 8 * 8; j < y + h && j < g_height; j += 8)
+        comp_fill_clip(x, j, w, 1, DESK_STRIPE, &scr);
+    /* 任务栏（屏底）；矮屏跳过 */
+    bh = taskbar_h();
+    if (g_height <= bh || y >= g_height)
+        return;
+    by = g_height - bh;
+    ry0 = y > by ? y : by;
+    ry1 = y + h < g_height ? y + h : g_height;
+    if (ry1 <= ry0)
+        return;
+    clip.x = x;
+    clip.y = ry0;
+    clip.w = w;
+    clip.h = ry1 - ry0;
+    comp_fill_clip(x, ry0, w, ry1 - ry0, TASKBAR_BG, &clip);
+    /* term 按钮：描边 + 面 + 文字；运行中（有窗）则灰显，点之不重开 */
+    taskbtn_rect(&btn);
+    if (btn.w == 0)
+        return;
+    {
+        uint32_t bface = g_win_valid ? TASKBAR_BG : TASKBTN_FACE;
+        uint32_t bfg = g_win_valid ? 0x00888888u : COMP_FG_RGB;
+
+        comp_fill_clip(btn.x, btn.y, btn.w, 1, bfg, &clip);
+        comp_fill_clip(btn.x, btn.y + btn.h - 1, btn.w, 1, bfg, &clip);
+        comp_fill_clip(btn.x, btn.y, 1, btn.h, bfg, &clip);
+        comp_fill_clip(btn.x + btn.w - 1, btn.y, 1, btn.h, bfg, &clip);
+        comp_fill_clip(btn.x + 1, btn.y + 1, btn.w - 2, btn.h - 2,
+                       bface, &clip);
+        tyy = btn.y + (btn.h > 16 * g_scale ? (btn.h - 16 * g_scale) / 2 : 1);
+        for (k = 0; k < 4; k++)
+            comp_glyph_clip(btn.x + (6 + k * COMP_FONT_W) * g_scale, tyy,
+                            tlabel[k], bfg, bface, &clip);
+    }
+}
+
 /* 执行客户端命令 */
 static void exec_fill(const uint8_t *p)
 {
@@ -277,13 +381,27 @@ static uint32_t title_color(void)
     return g_win_valid ? COMP_TITLE_ACTIVE : COMP_TITLE_IDLE;
 }
 
-/* 画窗框：1px 边框 + 标题栏 + 标题文本 */
+/* 关闭按钮：标题栏右侧方块；边长 th-8*scale，边距 4*scale */
+static void close_rect(comp_rect_t *r)
+{
+    uint32_t th = title_h();
+    uint32_t side = th > 8 * g_scale ? th - 8 * g_scale : th;
+    uint32_t m = 4 * g_scale;
+
+    r->w = side;
+    r->h = side;
+    r->x = g_frame.x + g_frame.w - COMP_BORDER - m - side;
+    r->y = g_frame.y + COMP_BORDER + m;
+}
+
+/* 画窗框：1px 边框 + 标题栏 + 标题文本 + 关闭按钮 */
 static void draw_frame(void)
 {
     uint32_t th = title_h();
     uint32_t i;
     uint32_t color = title_color();
     comp_rect_t clip;
+    comp_rect_t cb;
 
     if (!g_win_valid)
         return;
@@ -303,10 +421,27 @@ static void draw_frame(void)
     clip.w = g_frame.w;
     clip.h = g_frame.h;
     comp_fill_clip(g_frame.x + 1, g_frame.y + 1, g_frame.w - 2, th, color, &clip);
+    close_rect(&cb);
     for (i = 0; i < 31 && g_win_title[i] != '\0'; i++)
-        comp_glyph_clip(g_frame.x + 2 + 8 * g_scale + i * COMP_FONT_W * g_scale,
-                        g_frame.y + 1 + 6 * g_scale, g_win_title[i],
+    {
+        uint32_t tx;
+
+        tx = g_frame.x + 2 + 8 * g_scale + i * COMP_FONT_W * g_scale;
+        if (tx + COMP_FONT_W * g_scale > cb.x)
+            break; /* 给关闭按钮留位 */
+        comp_glyph_clip(tx, g_frame.y + 1 + 6 * g_scale, g_win_title[i],
                         COMP_FG_RGB, color, &clip);
+    }
+    /* 关闭按钮：描边方块 + X */
+    comp_fill_clip(cb.x, cb.y, cb.w, 1, COMP_FG_RGB, &clip);
+    comp_fill_clip(cb.x, cb.y + cb.h - 1, cb.w, 1, COMP_FG_RGB, &clip);
+    comp_fill_clip(cb.x, cb.y, 1, cb.h, COMP_FG_RGB, &clip);
+    comp_fill_clip(cb.x + cb.w - 1, cb.y, 1, cb.h, COMP_FG_RGB, &clip);
+    comp_glyph_clip(cb.x + (cb.w > 8 * g_scale ? (cb.w - 8 * g_scale) / 2 : 0),
+                    cb.y + (cb.h > 16 * g_scale ? (cb.h - 16 * g_scale) / 2 : 0),
+                    'X', COMP_FG_RGB, color, &clip);
+    /* 有窗时任务栏按钮灰显（光标已藏，直接重画） */
+    paint_desktop_rect(0, g_height - taskbar_h(), g_width, taskbar_h());
     cursor_paint(g_cx, g_cy, 0);
 }
 
@@ -364,9 +499,10 @@ static int send_win_geom(void)
 /* 移动窗口：清旧框、裁剪定位、画新框、下发几何与重画 */
 static int move_window(int nx, int ny)
 {
+    /* 窗框不得压住任务栏：活动区为屏高减任务栏高 */
+    uint32_t dh = g_height > taskbar_h() ? g_height - taskbar_h() : g_height;
     int max_x = (int)g_width - (int)g_frame.w;
-    int max_y = (int)g_height - (int)g_frame.h;
-    comp_rect_t scr;
+    int max_y = (int)dh - (int)g_frame.h;
 
     if (!g_win_valid)
         return -1;
@@ -374,10 +510,6 @@ static int move_window(int nx, int ny)
         nx = 0;
     if (ny < 0)
         ny = 0;
-    scr.x = 0;
-    scr.y = 0;
-    scr.w = g_width;
-    scr.h = g_height;
     if (max_x < 0 || max_y < 0)
         return -1;
     if (nx > max_x)
@@ -387,8 +519,7 @@ static int move_window(int nx, int ny)
     if ((uint32_t)nx == g_frame.x && (uint32_t)ny == g_frame.y)
         return 0;
     cursor_paint(g_cx, g_cy, 1); /* 先恢复光标下像素，再清旧框 */
-    comp_fill_clip(g_frame.x, g_frame.y, g_frame.w, g_frame.h,
-                   COMP_BG_RGB, &scr);
+    paint_desktop_rect(g_frame.x, g_frame.y, g_frame.w, g_frame.h);
     g_frame.x = (uint32_t)nx;
     g_frame.y = (uint32_t)ny;
     g_win.x = g_frame.x + COMP_BORDER;
@@ -398,16 +529,20 @@ static int move_window(int nx, int ny)
     return send_win_geom();
 }
 
-/* 命中测试：标题栏返回 1，客户区返回 2，框外返回 0 */
+/* 命中测试：关闭按钮返回 3，标题栏返回 1，客户区返回 2，框外返回 0 */
 static int hit_frame(uint32_t x, uint32_t y)
 {
     uint32_t th = title_h();
+    comp_rect_t cb;
 
     if (!g_win_valid)
         return 0;
     if (x < g_frame.x || x >= g_frame.x + g_frame.w ||
         y < g_frame.y || y >= g_frame.y + g_frame.h)
         return 0;
+    close_rect(&cb);
+    if (x >= cb.x && x < cb.x + cb.w && y >= cb.y && y < cb.y + cb.h)
+        return 3;
     if (y < g_frame.y + COMP_BORDER + th)
         return 1;
     return 2;
@@ -427,6 +562,19 @@ static int on_create(const uint8_t *p, unsigned long len)
         printf("compositor: CREATE ignored (single window)\n");
         return 0;
     }
+    if (!g_hs_ok)
+    {
+        /* 重连的客户端：重开 evt 写端；对端正持读端等 WIN_GEOM，立即配对 */
+        if (g_evtfd >= 0)
+            close(g_evtfd);
+        g_evtfd = (int)open(COMP_EVT_FIFO, O_WRONLY);
+        if (g_evtfd < 0)
+            return -1;
+        g_hs_ok = 1;
+        printf("compositor: client reconnected\n");
+    }
+    g_spawn_pending = 0; /* 等到的 CREATE 消费掉 pending */
+    g_spawn_ttl = 0;
     if (len < 8)
         return -1;
     want_w = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -449,21 +597,26 @@ static int on_create(const uint8_t *p, unsigned long len)
         g_win_title[2] = 'n';
         g_win_title[3] = '\0';
     }
-    /* 客户区：0=占满（留 chrome 位）；否则按需居中 */
-    cw = want_w != 0 ? want_w : g_width;
-    ch = want_h != 0 ? want_h : g_height;
-    if (cw > g_width)
-        cw = g_width;
-    if (ch > g_height)
-        ch = g_height;
-    g_frame.w = cw + 2 * COMP_BORDER;
-    g_frame.h = ch + 2 * COMP_BORDER + title_h();
-    if (g_frame.w > g_width)
-        g_frame.w = g_width;
-    if (g_frame.h > g_height)
-        g_frame.h = g_height;
-    g_frame.x = (g_width - g_frame.w) / 2;
-    g_frame.y = (g_height - g_frame.h) / 2;
+    /* 客户区：0=占满桌面（任务栏以上）；否则按需居中 */
+    {
+        uint32_t dh = g_height > taskbar_h() ? g_height - taskbar_h()
+                                             : g_height;
+
+        cw = want_w != 0 ? want_w : g_width;
+        ch = want_h != 0 ? want_h : dh;
+        if (cw > g_width)
+            cw = g_width;
+        if (ch > dh)
+            ch = dh;
+        g_frame.w = cw + 2 * COMP_BORDER;
+        g_frame.h = ch + 2 * COMP_BORDER + title_h();
+        if (g_frame.w > g_width)
+            g_frame.w = g_width;
+        if (g_frame.h > dh)
+            g_frame.h = dh;
+        g_frame.x = (g_width - g_frame.w) / 2;
+        g_frame.y = (dh - g_frame.h) / 2;
+    }
     g_win.x = g_frame.x + COMP_BORDER;
     g_win.y = g_frame.y + COMP_BORDER + title_h();
     g_win.w = g_frame.w - 2 * COMP_BORDER;
@@ -475,19 +628,79 @@ static int on_create(const uint8_t *p, unsigned long len)
     return send_win_geom();
 }
 
-/* 客户端断开/DESTROY：回无窗状态，等下一次握手 */
+/* 客户端断开/DESTROY/关窗：回无窗状态；不断 fd（新客户端直接复用）， */
+/* 已是无窗无连接态则静默返回，避免 EOF 轮询刷屏 */
 static void client_reset(const char *why)
 {
-    printf("compositor: client lost (%s), re-handshake\n", why);
+    if (!g_hs_ok && !g_win_valid)
+        return;
+    printf("compositor: client lost (%s)\n", why);
     g_win_valid = 0;
     g_dragging = 0;
-    if (ipc_handshake() != 0)
-        exit(1);
+    g_close_armed = 0;
+    g_spawn_armed = 0;
+    g_cursor_sent = 0;
+    g_hs_ok = 0;
     clear_screen();
     cursor_paint(g_cx, g_cy, 0);
 }
 
-/* 与客户端握手：建 fifo、开两端（阻塞等对端）；窗口等 CREATE 到达 */
+/* 点任务栏 term 钮：双 fork 拉起 term；孙进程由 init 接管并回收 */
+static void spawn_term(void)
+{
+    long pid = fork();
+
+    if (pid < 0)
+    {
+        printf("compositor: fork term failed\n");
+        return;
+    }
+    if (pid == 0)
+    {
+        long pid2 = fork();
+
+        if (pid2 < 0)
+            exit(1);
+        if (pid2 == 0)
+        {
+            char *const argv[] = {"term", NULL};
+
+            execve("/bin/term", argv, NULL);
+            printf("compositor: execve term failed\n");
+            exit(1);
+        }
+        exit(0); /* 中间进程退出，断开与 compositor 的父子关系 */
+    }
+    {
+        int st;
+
+        wait(&st); /* 回收中间进程（转瞬即逝，不久等） */
+    }
+    g_spawn_pending = 1;
+    g_spawn_ttl = 400; /* 约 2s 内等 CREATE，超时则允许再点 */
+    printf("compositor: spawn term requested\n");
+}
+
+/* 用户点关闭钮：擦窗、下发 CLOSE，客户端回 DESTROY 后退出 */
+static void do_close(void)
+{
+    if (!g_win_valid)
+        return;
+    printf("compositor: window close requested\n");
+    g_close_armed = 0;
+    g_dragging = 0;
+    cursor_paint(g_cx, g_cy, 1); /* 先藏光标再清框 */
+    paint_desktop_rect(g_frame.x, g_frame.y, g_frame.w, g_frame.h);
+    g_win_valid = 0;
+    /* 窗口已关，任务栏切回空闲态（亮按钮） */
+    paint_desktop_rect(0, g_height - taskbar_h(), g_width, taskbar_h());
+    cursor_paint(g_cx, g_cy, 0);
+    if (g_evtfd >= 0)
+        comp_send(g_evtfd, COMP_MSG_CLOSE, NULL, 0); /* 尽力通知，失败走 EOF */
+    client_reset("closed");
+}
+
+/* 与客户端握手：建 fifo、开两端（阻塞等首个对端）；窗口等 CREATE 到达 */
 static int ipc_handshake(void)
 {
 
@@ -525,7 +738,10 @@ static int ipc_handshake(void)
     }
     g_win_valid = 0;
     g_dragging = 0;
+    g_close_armed = 0;
+    g_spawn_armed = 0;
     g_cursor_sent = 0; /* 新客户端尚未同步过光标位置 */
+    g_hs_ok = 1;
     printf("compositor: client connected, waiting CREATE\n");
     return 0;
 }
@@ -606,7 +822,7 @@ int main()
 
     printf("compositor: input ready %ux%u, waiting client\n",
            g_width, g_height);
-    if (ipc_handshake() != 0)
+    if (ipc_handshake() != 0) /* 仅启动时阻塞等首个客户端 */
         exit(1);
     clear_screen();
     cursor_paint(g_cx, g_cy, 0);
@@ -625,6 +841,8 @@ int main()
         uint8_t *payload = g_payload;
         comp_hdr_t *h = &g_cmdh;
 
+        if (g_spawn_pending && g_spawn_ttl > 0 && --g_spawn_ttl == 0)
+            g_spawn_pending = 0; /* 超时还没 CREATE，放行重点 */
         /* 鼠标：SYN 分组移动光标，标题栏拖拽移窗，整批转发客户端 */
         errno = 0;
         r = read(mfd, mevs, sizeof(g_mevs));
@@ -668,13 +886,43 @@ int main()
                                 printf("compositor: drag start off=%d,%d\n",
                                        g_drag_ox, g_drag_oy);
                             }
+                            else if (hit == 3)
+                            {
+                                g_close_armed = 1;
+                                printf("compositor: close armed @%u,%u\n",
+                                       g_cx, g_cy);
+                            }
+                            else if (hit == 0 && in_taskbtn(g_cx, g_cy))
+                            {
+                                g_spawn_armed = 1;
+                                printf("compositor: spawn armed @%u,%u\n",
+                                       g_cx, g_cy);
+                            }
                         }
                         else
                         {
                             g_mbuttons &= (uint32_t)~0x01u;
-                            if (g_dragging)
+                            if (g_close_armed)
+                            {
+                                g_close_armed = 0;
+                                if (hit_frame(g_cx, g_cy) == 3)
+                                    do_close();
+                            }
+                            else if (g_spawn_armed)
+                            {
+                                g_spawn_armed = 0;
+                                /* 已运行则不重开（暂时规则）：亮钮点之无反应 */
+                                if (in_taskbtn(g_cx, g_cy) && !g_win_valid &&
+                                    !g_hs_ok && !g_spawn_pending)
+                                    spawn_term();
+                                else
+                                    printf("compositor: spawn ignored\n");
+                            }
+                            else if (g_dragging)
+                            {
                                 printf("compositor: drag end\n");
-                            g_dragging = 0;
+                                g_dragging = 0;
+                            }
                         }
                         mhave = 1;
                     }
@@ -693,13 +941,17 @@ int main()
                 }
                 else if (mevs[i].type == INPUT_EV_SYN && mhave)
                 {
-                    int nx = (int)g_cx + mdx;
-                    int ny = (int)g_cy + mdy;
+                    int nx = (int)g_cx + mdx * MOUSE_SPEED;
+                    int ny = (int)g_cy + mdy * MOUSE_SPEED;
 
                     cursor_paint(g_cx, g_cy, 1);
                     g_cx = clamp_u32(nx, g_max_x);
                     g_cy = clamp_u32(ny, g_max_y);
                     cursor_paint(g_cx, g_cy, 0);
+                    if (g_close_armed && hit_frame(g_cx, g_cy) != 3)
+                        g_close_armed = 0; /* 移出关闭钮，取消待关闭 */
+                    if (g_spawn_armed && !in_taskbtn(g_cx, g_cy))
+                        g_spawn_armed = 0; /* 移出 term 钮，取消待拉起 */
                     if (g_dragging)
                         move_window((int)g_cx - g_drag_ox, (int)g_cy - g_drag_oy);
                     mdx = 0;
