@@ -5,13 +5,7 @@
 #include <input.h>
 #include <comp_ipc.h>
 
-/* term：compositor 的第一个正式客户端（终端）。
- *
- * 架构红线：只走 pipe 与 compositor 说话，永远不碰 /dev/kbd0、/dev/mouse0、
- * /dev/fb0（连 stdin fd 0 都不读——那是全局 kbd 环，读了会偷走 compositor 的事件）。
- * 渲染走 C→S 命令（compositor 光栅化），输入走 S→C 事件（窗口相对坐标尚未启用，
- * v1 窗口即全屏，坐标即屏坐标）。
- */
+/* term：compositor 的第一个正式客户端（终端） */
 
 #define TERM_BG 0x000F0F12u
 #define TERM_FG 0x00E8E8E8u
@@ -46,6 +40,7 @@ static comp_hdr_t g_evth;
 static int g_mx; /* 状态行用的鼠标位置 */
 static int g_my;
 static uint32_t g_mbuttons;
+static uint32_t g_focused; /* compositor 告知的焦点状态 */
 
 static int send_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
 {
@@ -284,8 +279,30 @@ static int term_puts(const char *s)
     return 0;
 }
 
-/* 与 compositor 握手：开两端收 WIN */
-/* 对端未就绪则重试等待；超时退出由 init 重拉 */
+/* 建窗请求：0,0=最大化；name 进标题栏 */
+static int send_create(uint32_t w, uint32_t h, const char *name)
+{
+    uint8_t p[8 + 32];
+    unsigned long n = 0;
+
+    p[0] = (uint8_t)w;
+    p[1] = (uint8_t)(w >> 8);
+    p[2] = (uint8_t)(w >> 16);
+    p[3] = (uint8_t)(w >> 24);
+    p[4] = (uint8_t)h;
+    p[5] = (uint8_t)(h >> 8);
+    p[6] = (uint8_t)(h >> 16);
+    p[7] = (uint8_t)(h >> 24);
+    while (n < 31 && name[n] != '\0')
+    {
+        p[8 + n] = (uint8_t)name[n];
+        n++;
+    }
+    p[8 + n] = 0;
+    return (int)comp_send(g_cmdfd, COMP_MSG_CREATE, p, 8 + n + 1);
+}
+
+/* 与 compositor 握手：开两端，发 CREATE，等 WIN_GEOM */
 static int term_handshake(void)
 {
     comp_hdr_t h;
@@ -326,10 +343,12 @@ static int term_handshake(void)
         return -1;
     }
     comp_reader_init(&g_evtr);
-    /* WIN 是阻塞首帧 */
+    /* 先发 CREATE，再阻塞等 WIN_GEOM 首帧 */
+    if (send_create(0, 0, "term") != 0)
+        return -1;
     if (comp_read_all(g_evtfd, &h, sizeof(h)) != 0)
         return -1;
-    if (h.magic != COMP_IPC_MAGIC || h.type != COMP_MSG_WIN ||
+    if (h.magic != COMP_IPC_MAGIC || h.type != COMP_MSG_WIN_GEOM ||
         h.len != sizeof(w))
         return -1;
     if (comp_read_all(g_evtfd, &w, sizeof(w)) != 0)
@@ -378,10 +397,6 @@ static void term_reset(void)
 
 int main()
 {
-    int mdx = 0;
-    int mdy = 0;
-    int mhave = 0;
-
     printf("term: connecting compositor\n");
     if (term_handshake() != 0)
     {
@@ -410,6 +425,69 @@ int main()
             if (fr < 0)
                 goto reconnect; /* compositor 挂了，重连 */
             idle = 0;
+            if (h->type == COMP_MSG_FOCUS)
+            {
+                /* 单窗口恒聚焦；记下状态备用 */
+                if (h->len >= 4)
+                    g_focused = payload[0] | ((uint32_t)payload[1] << 8) |
+                                ((uint32_t)payload[2] << 16) | ((uint32_t)payload[3] << 24);
+                continue;
+            }
+            if (h->type == COMP_MSG_EXPOSE)
+            {
+                if (full_redraw() != 0)
+                    goto reconnect;
+                continue;
+            }
+            if (h->type == COMP_MSG_WIN_GEOM)
+            {
+                /* 窗口被移动/改变：重读几何并全量重画 */
+                if (h->len == sizeof(comp_win_t))
+                {
+                    comp_win_t *nw = (comp_win_t *)payload;
+                    uint32_t sc = nw->scale < 1 ? 1 : nw->scale;
+
+                    if (sc > 4)
+                        sc = 4;
+                    g_cw = COMP_FONT_W * sc;
+                    g_ch = COMP_FONT_H * sc;
+                    g_cols = nw->w / g_cw;
+                    g_rows = nw->h / g_ch;
+                    if (g_cols > TERM_MAX_COLS)
+                        g_cols = TERM_MAX_COLS;
+                    if (g_rows > TERM_MAX_ROWS)
+                        g_rows = TERM_MAX_ROWS;
+                    if (g_cols == 0 || g_rows < 2)
+                        goto reconnect;
+                    g_ox = (nw->w > g_cols * g_cw) ? (nw->w - g_cols * g_cw) / 2 : 0;
+                    g_oy = (nw->h > g_rows * g_ch) ? (nw->h - g_rows * g_ch) / 2 : 0;
+                    if (g_cx >= g_cols)
+                        g_cx = g_cols - 1;
+                    if (g_cy >= g_rows)
+                        g_cy = g_rows - 2;
+                    if (full_redraw() != 0)
+                        goto reconnect;
+                }
+                continue;
+            }
+            if (h->type == COMP_MSG_CURSOR)
+            {
+                /* 服务端绝对光标（屏坐标，已钳制）：直接同步 */
+                if (h->len >= 8)
+                {
+                    g_mx = (int)((uint32_t)payload[0] |
+                                 ((uint32_t)payload[1] << 8) |
+                                 ((uint32_t)payload[2] << 16) |
+                                 ((uint32_t)payload[3] << 24));
+                    g_my = (int)((uint32_t)payload[4] |
+                                 ((uint32_t)payload[5] << 8) |
+                                 ((uint32_t)payload[6] << 16) |
+                                 ((uint32_t)payload[7] << 24));
+                    if (draw_status() != 0)
+                        goto reconnect;
+                }
+                continue;
+            }
             if (h->type != COMP_MSG_EVTS)
                 continue;
             {
@@ -426,8 +504,9 @@ int main()
                             code == INPUT_BTN_RIGHT ||
                             code == INPUT_BTN_MIDDLE)
                         {
-                            uint32_t bit = code == INPUT_BTN_LEFT ? 1u
-                                           : code == INPUT_BTN_RIGHT ? 2u : 4u;
+                            uint32_t bit = code == INPUT_BTN_LEFT    ? 1u
+                                           : code == INPUT_BTN_RIGHT ? 2u
+                                                                     : 4u;
 
                             if (evs[i].value)
                                 g_mbuttons |= bit;
@@ -440,28 +519,10 @@ int main()
                         if (term_putc(input_key_to_ascii((uint16_t)code)) != 0)
                             goto reconnect;
                     }
-                    else if (evs[i].type == INPUT_EV_REL)
+                    else if (evs[i].type == INPUT_EV_REL ||
+                             evs[i].type == INPUT_EV_SYN)
                     {
-                        if (evs[i].code == INPUT_REL_X)
-                        {
-                            mdx += evs[i].value;
-                            mhave = 1;
-                        }
-                        else if (evs[i].code == INPUT_REL_Y)
-                        {
-                            mdy += evs[i].value;
-                            mhave = 1;
-                        }
-                    }
-                    else if (evs[i].type == INPUT_EV_SYN && mhave)
-                    {
-                        g_mx += mdx;
-                        g_my += mdy;
-                        mdx = 0;
-                        mdy = 0;
-                        mhave = 0;
-                        if (draw_status() != 0)
-                            goto reconnect;
+                        continue; /* 光标位置由 CURSOR 消息同步，相对位移忽略 */
                     }
                 }
             }
@@ -477,9 +538,6 @@ int main()
             exit(1);
         }
         term_reset();
-        mdx = 0;
-        mdy = 0;
-        mhave = 0;
         if (full_redraw() != 0)
             exit(1);
         if (term_puts("csos term v1 -- reconnected\n> ") != 0)

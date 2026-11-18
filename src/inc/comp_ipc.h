@@ -4,7 +4,16 @@
 #include <stdint.h>
 
 /*
- * compositor ↔ client 协议（v1，单客户端）。
+ * compositor ↔ client 窗口协议（v1：单客户端独占一个窗口）。
+ * 建窗：客户端先发 CREATE（期望客户区 w×h，0=最大化；name[32] 为标题）。
+ * compositor 分配（有最终决定权）后回 WIN_GEOM（客户区 rect+scale）与 FOCUS。
+ * 客户端只在客户区坐标内绘图；标题栏/边框由 compositor 画（服务端装饰）。
+ * 重画时发 EXPOSE（damage 区，全 0 为整窗）；焦点变化发 FOCUS（失焦标题栏变灰）。
+ * 退出前发 DESTROY；直接断开视为隐式 DESTROY（EOF 感知）。
+ * MOVE_REQ 建议窗口左上角（屏坐标）；compositor 裁剪后生效，再回 WIN_GEOM+EXPOSE。
+ * 光标移动后下发 CURSOR（绝对屏坐标，已钳制；仅变化时发送）；
+ * 客户端直接同步，不再自行累加相对位移（相对位移经钳制后与实际位置不一致）。
+ * 多客户端（共享 fifo 字节流交错）暂不支持：第二路 CREATE 会被忽略。
  */
 
 #define COMP_CMD_FIFO "/pipe/comp-cmd"
@@ -15,15 +24,21 @@
 #define COMP_FONT_W 8
 #define COMP_FONT_H 16
 
-/* C→S：渲染命令（窗口相对坐标，color 为 XRGB 0x00RRGGBB） */
+/* C→S 渲染命令（窗口相对坐标，color 为 XRGB 0x00RRGGBB） */
 #define COMP_MSG_FILL 1 /* payload: u32 x,y,w,h,color */
 #define COMP_MSG_TEXT 2 /* payload: u32 x,y,color; u16 len; u8 bytes[len] */
+/* C→S 窗口管理 */
+#define COMP_MSG_CREATE 3   /* payload: comp_create_req */
+#define COMP_MSG_DESTROY 4  /* 空 payload */
+#define COMP_MSG_MOVE_REQ 5 /* payload: u32 x,y（屏坐标，建议值） */
+/* S→C */
+#define COMP_MSG_WIN_GEOM 3 /* payload: comp_win_t */
+#define COMP_MSG_FOCUS 4    /* payload: u32 focused（0/1） */
+#define COMP_MSG_EXPOSE 5   /* payload: comp_rect（窗口相对 damage 区，全 0=整窗） */
+#define COMP_MSG_EVTS 2     /* payload: input_event_t[n]（见 input.h，原样转发） */
+#define COMP_MSG_CURSOR 6   /* payload: comp_cursor_t（光标绝对屏坐标，已钳制） */
 
-/* S→C：窗口与输入 */
-#define COMP_MSG_WIN 1  /* payload: comp_win_t（屏坐标 rect + 字号 scale） */
-#define COMP_MSG_EVTS 2 /* payload: input_event_t[n]（见 input.h，原样转发） */
-
-#define COMP_MAX_PAYLOAD 4000
+#define COMP_MAX_PAYLOAD 2048
 
 typedef struct comp_hdr
 {
@@ -40,9 +55,7 @@ typedef struct comp_rect
     uint32_t h;
 } comp_rect_t;
 
-/* 服务端分配的窗口：屏坐标 rect + 字号 scale */
-/* 客户端网格 = w/(8*scale) x h/(16*scale) */
-/* TEXT 坐标仍按像素给 */
+/* 服务端分配的窗口：客户区 rect（屏坐标）+ 字号 scale */
 typedef struct comp_win
 {
     uint32_t x;
@@ -51,6 +64,21 @@ typedef struct comp_win
     uint32_t h;
     uint32_t scale;
 } comp_win_t;
+
+/* 客户端建窗请求：期望客户区尺寸（0=最大化）；name 为标题栏文本 */
+typedef struct comp_create_req
+{
+    uint32_t w;
+    uint32_t h;
+    char name[32];
+} comp_create_req_t;
+
+/* 服务端光标位置：绝对屏坐标（钳制后），客户端直接同步 */
+typedef struct comp_cursor
+{
+    uint32_t x;
+    uint32_t y;
+} comp_cursor_t;
 
 /* 阻塞写完 len 字节 */
 static inline long comp_write_all(int fd, const void *buf, unsigned long len)
@@ -71,7 +99,9 @@ static inline long comp_write_all(int fd, const void *buf, unsigned long len)
     return 0;
 }
 
-/* 阻塞读满 len 字节 */
+/* 阻塞读满 len 字节（O_NONBLOCK fd 无数据时 yield 重试，而非直接失败；
+ * 对端关闭返回 -1）。注意普通 read() 读空回 EAGAIN，这里必须重试，
+ * 否则“发完 CREATE 立刻读 WIN_GEOM”这种时序必 competing 失败。 */
 static inline long comp_read_all(int fd, void *buf, unsigned long len)
 {
     char *p = (char *)buf;
@@ -79,12 +109,21 @@ static inline long comp_read_all(int fd, void *buf, unsigned long len)
 
     while (off < len)
     {
-        long r = read(fd, p + off, len - off);
+        long r;
 
+        errno = 0;
+        r = read(fd, p + off, len - off);
         if (r == 0)
             return -1; /* EOF：对端全关 */
         if (r < 0)
+        {
+            if (errno == EAGAIN)
+            {
+                sleep(2);
+                continue;
+            }
             return -1;
+        }
         off += (unsigned long)r;
     }
     return 0;
@@ -108,7 +147,7 @@ static inline long comp_send(int fd, uint16_t type, const void *payload,
     return 0;
 }
 
-#define COMP_RBUFSZ 4096
+#define COMP_RBUFSZ 2048
 
 typedef struct comp_reader
 {
