@@ -32,6 +32,8 @@ typedef struct boot_config
     char init[BOOT_CONFIG_INIT_MAX]; /* 首个用户程序路径 */
     char debug[16];                  /* 默认 "serial" */
     int timeout;                     /* 默认 3（秒，预留） */
+    uint32_t disp_w;                 /* 期望分辨率宽，0=自动取最大 */
+    uint32_t disp_h;                 /* 期望分辨率高，0=自动取最大 */
 } boot_config_t;
 
 extern boot_config_t g_boot_config;

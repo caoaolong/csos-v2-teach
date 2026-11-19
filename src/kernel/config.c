@@ -38,6 +38,8 @@ static void cfg_set_defaults(void)
                    sizeof(g_boot_config.init));
     kernel_strncpy(g_boot_config.debug, "serial", sizeof(g_boot_config.debug));
     g_boot_config.timeout = 3;
+    g_boot_config.disp_w = 0;
+    g_boot_config.disp_h = 0;
 }
 
 static uint32_t cfg_tok_len(const char *s, const char *end)
@@ -139,6 +141,37 @@ static void cfg_parse_kv(const char *s, const char *end)
     else if (kn == 5 && kernel_strncmp(ks, "debug", 5) == 0)
         cfg_copy(g_boot_config.debug, sizeof(g_boot_config.debug), vs,
                  (uint32_t)(ve - vs));
+    else if (kn == 10 && kernel_strncmp(ks, "resolution", 10) == 0)
+    {
+        /* WxH：如 1280x720；任一非法则整项作废（保持自动） */
+        uint32_t w = 0;
+        uint32_t h = 0;
+        const char *p = vs;
+
+        while (p < ve && *p >= '0' && *p <= '9')
+        {
+            w = w * 10 + (uint32_t)(*p - '0');
+            if (w > 4096)
+                break;
+            p++;
+        }
+        if (p < ve && *p == 'x')
+        {
+            p++;
+            while (p < ve && *p >= '0' && *p <= '9')
+            {
+                h = h * 10 + (uint32_t)(*p - '0');
+                if (h > 4096)
+                    break;
+                p++;
+            }
+        }
+        if (p == ve && w >= 640 && w <= 4096 && h >= 480 && h <= 4096)
+        {
+            g_boot_config.disp_w = w;
+            g_boot_config.disp_h = h;
+        }
+    }
     else if (kn == 7 && kernel_strncmp(ks, "timeout", 7) == 0)
     {
         int v = 0;
@@ -233,11 +266,17 @@ void boot_config_summary()
         return;
     }
 
-    fput_string("[CFG] pmm=%s disk=%s root=%s init=%s debug=%s timeout=%d mounts=%d\n",
+    fput_string("[CFG] pmm=%s disk=%s root=%s init=%s debug=%s timeout=%d mounts=%d",
                 g_boot_config.pmm, g_boot_config.disk,
                 g_boot_config.root[0] ? g_boot_config.root : "(none)",
                 g_boot_config.init, g_boot_config.debug,
                 g_boot_config.timeout, g_boot_config.mount_count);
+    if (g_boot_config.disp_w != 0 && g_boot_config.disp_h != 0)
+        fput_string(" resolution=%ux%u", g_boot_config.disp_w,
+                    g_boot_config.disp_h);
+    else
+        fput_string(" resolution=auto");
+    fput_string("\n");
     for (i = 0; i < g_boot_config.mount_count; i++)
     {
         fput_string("[CFG] mount %s %s %s\n",

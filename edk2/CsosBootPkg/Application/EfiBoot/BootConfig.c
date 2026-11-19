@@ -94,3 +94,61 @@ Done:
     File->Close(File);
     return Status;
 }
+
+EFI_STATUS
+SaveBootConfig(
+    IN EFI_FILE_PROTOCOL *Root,
+    IN CHAR16 *FileName,
+    IN CHAR8 *Text,
+    IN UINTN Size)
+{
+    EFI_FILE_PROTOCOL *File;
+    EFI_STATUS Status;
+    UINTN Done;
+    UINTN Chunk;
+
+    if (Root == NULL || FileName == NULL ||
+        (Text == NULL && Size != 0))
+    {
+        return EFI_INVALID_PARAMETER;
+    }
+
+    /* Delete-then-create: no stale tail when the new text is shorter. */
+    /* Delete() also closes the handle, no Close() after it. */
+    Status = Root->Open(Root, &File, FileName,
+                        EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE, 0);
+    if (!EFI_ERROR(Status))
+    {
+        File->Delete(File);
+    }
+
+    Status = Root->Open(Root, &File, FileName,
+                        EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE |
+                            EFI_FILE_MODE_CREATE,
+                        0);
+    if (EFI_ERROR(Status))
+    {
+        return Status;
+    }
+
+    Done = 0;
+    while (Done < Size)
+    {
+        Chunk = Size - Done;
+        Status = File->Write(File, &Chunk, Text + Done);
+        if (EFI_ERROR(Status))
+        {
+            File->Close(File);
+            return Status;
+        }
+        if (Chunk == 0)
+        {
+            File->Close(File);
+            return EFI_DEVICE_ERROR;
+        }
+        Done += Chunk;
+    }
+
+    /* Close flushes to the FAT volume. */
+    return File->Close(File);
+}

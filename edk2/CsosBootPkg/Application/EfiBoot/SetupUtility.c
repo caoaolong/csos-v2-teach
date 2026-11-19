@@ -15,10 +15,13 @@
 #include <Library/UefiRuntimeServicesTableLib.h>
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/HiiFont.h>
+#include <Protocol/LoadedImage.h>
+#include <Protocol/SimpleFileSystem.h>
 #include <Protocol/SimpleTextIn.h>
 
 #include "SetupNvData.h"
 #include "SetupUtility.h"
+#include "BootConfig.h"
 #include <GfxLayout.h>
 
 #pragma warning(push)
@@ -64,6 +67,279 @@ STATIC UINTN mNumGopModes;
 STATIC GOP_MODE *mGopModes;
 STATIC BOOLEAN mGfxReady;
 STATIC SETUP_FOCUS mFocus;
+STATIC EFI_HANDLE mImageHandle;
+/* Desired resolution from csos.cfg (0 = unset): parsed on load,
+   translated to a GOP index in Init after the mode table is known. */
+STATIC UINT32 mWantGopW;
+STATIC UINT32 mWantGopH;
+
+STATIC
+UINTN
+CfgKeyLen(IN CONST CHAR8 *Key)
+{
+    UINTN n = 0;
+
+    while (Key[n] != '\0')
+    {
+        n++;
+    }
+    return n;
+}
+
+/* Whether a text line looks like key=... (leading ws allowed, key must be
+   followed by ws or '='). */
+STATIC
+BOOLEAN
+CfgKeyAtLine(
+    IN CONST CHAR8 *Line,
+    IN UINTN LineLen,
+    IN CONST CHAR8 *Key)
+{
+    UINTN k = 0;
+
+    while (Key[k] != '\0')
+    {
+        if (k >= LineLen || Line[k] != Key[k])
+        {
+            return FALSE;
+        }
+        k++;
+    }
+    if (k < LineLen && Line[k] != '=' && Line[k] != ' ' && Line[k] != '\t')
+    {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* Find key= in the whole csos.cfg text and return its value (trimmed);
+   return FALSE when absent. */
+STATIC
+BOOLEAN
+CfgFindValue(
+    IN CONST CHAR8 *Text,
+    IN UINTN Size,
+    IN CONST CHAR8 *Key,
+    OUT CONST CHAR8 **Val,
+    OUT UINTN *ValLen)
+{
+    UINTN KeyLen = CfgKeyLen(Key);
+    UINTN i = 0;
+
+    while (i < Size)
+    {
+        UINTN ls = i;
+        UINTN le = i;
+
+        while (le < Size && Text[le] != '\n')
+        {
+            le++;
+        }
+        while (le > ls && (Text[le - 1] == '\r' || Text[le - 1] == ' ' ||
+                           Text[le - 1] == '\t'))
+        {
+            le--;
+        }
+        while (ls < le && (Text[ls] == ' ' || Text[ls] == '\t'))
+        {
+            ls++;
+        }
+        if (le > ls && Text[ls] != '#' && CfgKeyAtLine(Text + ls, le - ls, Key))
+        {
+            UINTN v = ls + KeyLen;
+
+            while (v < le && (Text[v] == ' ' || Text[v] == '\t'))
+            {
+                v++;
+            }
+            if (v < le && Text[v] == '=')
+            {
+                v++;
+                while (v < le && (Text[v] == ' ' || Text[v] == '\t'))
+                {
+                    v++;
+                }
+                *Val = Text + v;
+                *ValLen = le - v;
+                return TRUE;
+            }
+        }
+        if (le < Size)
+        {
+            i = le + 1;
+        }
+        else
+        {
+            break;
+        }
+    }
+    return FALSE;
+}
+
+/* Pure-digit string to UINTN (empty/non-digit/>0xFFFF yields FALSE). */
+STATIC
+BOOLEAN
+CfgParseUint(
+    IN CONST CHAR8 *S,
+    IN UINTN Len,
+    OUT UINTN *Val)
+{
+    UINTN v = 0;
+    UINTN i;
+
+    if (Len == 0)
+    {
+        return FALSE;
+    }
+    for (i = 0; i < Len; i++)
+    {
+        if (S[i] < '0' || S[i] > '9')
+        {
+            return FALSE;
+        }
+        v = v * 10 + (UINTN)(S[i] - '0');
+        if (v > 0xFFFF)
+        {
+            return FALSE;
+        }
+    }
+    *Val = v;
+    return TRUE;
+}
+
+/* Open the ESP root from our image handle. */
+STATIC
+EFI_STATUS
+SetupOpenEspRoot(
+    IN EFI_HANDLE ImageHandle,
+    OUT EFI_FILE_PROTOCOL **Root)
+{
+    EFI_LOADED_IMAGE_PROTOCOL *LoadedImage;
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs;
+    EFI_STATUS Status;
+
+    Status = gBS->HandleProtocol(
+        ImageHandle,
+        &gEfiLoadedImageProtocolGuid,
+        (VOID **)&LoadedImage);
+    if (EFI_ERROR(Status))
+    {
+        return Status;
+    }
+    Status = gBS->HandleProtocol(
+        LoadedImage->DeviceHandle,
+        &gEfiSimpleFileSystemProtocolGuid,
+        (VOID **)&Fs);
+    if (EFI_ERROR(Status))
+    {
+        return Status;
+    }
+    return Fs->OpenVolume(Fs, Root);
+}
+
+STATIC
+VOID
+SetupApplyParsedFile(
+    IN CONST CHAR8 *Text,
+    IN UINTN Size,
+    OUT CSOS_BOOT_SETUP *Config,
+    OUT BOOLEAN *SeenTimeout,
+    OUT BOOLEAN *SeenAutoBoot)
+{
+    CONST CHAR8 *v;
+    UINTN n;
+    UINTN u;
+
+    if (CfgFindValue(Text, Size, "timeout", &v, &n) && CfgParseUint(v, n, &u))
+    {
+        if (u < CSOS_SETUP_MIN_TIMEOUT)
+        {
+            u = CSOS_SETUP_MIN_TIMEOUT;
+        }
+        else if (u > CSOS_SETUP_MAX_TIMEOUT)
+        {
+            u = CSOS_SETUP_MAX_TIMEOUT;
+        }
+        Config->BootTimeout = (UINT16)u;
+        *SeenTimeout = TRUE;
+    }
+    if (CfgFindValue(Text, Size, "autoboot", &v, &n) && CfgParseUint(v, n, &u))
+    {
+        Config->AutoBoot = (u == 0) ? 0 : 1;
+        *SeenAutoBoot = TRUE;
+    }
+    {
+        UINTN i;
+
+        mWantGopW = 0;
+        mWantGopH = 0;
+        if (CfgFindValue(Text, Size, "resolution", &v, &n))
+        {
+            UINTN wv;
+            UINTN hv;
+
+            for (i = 0; i < n && v[i] != 'x'; i++)
+            {
+            }
+            if (i < n && CfgParseUint(v, i, &wv) &&
+                CfgParseUint(v + i + 1, n - i - 1, &hv) && wv > 0 && hv > 0)
+            {
+                mWantGopW = (UINT32)wv;
+                mWantGopH = (UINT32)hv;
+            }
+        }
+    }
+}
+
+/* One-shot migration: backfill keys missing from the file with the legacy
+   NVRAM variable (deleted after a successful file write-back). */
+STATIC
+VOID
+SetupSeedFromNvram(
+    IN BOOLEAN SeenTimeout,
+    IN BOOLEAN SeenAutoBoot,
+    IN OUT CSOS_BOOT_SETUP *Config)
+{
+    EFI_STATUS Status;
+    UINTN Size;
+    CSOS_BOOT_SETUP Nv;
+
+    Size = sizeof(Nv);
+    Status = gRT->GetVariable(
+        CSOS_SETUP_VARIABLE_NAME,
+        &gCsosBootSetupFormsetGuid,
+        NULL,
+        &Size,
+        &Nv);
+    if (EFI_ERROR(Status))
+    {
+        return;
+    }
+    if (!SeenTimeout)
+    {
+        if (Nv.BootTimeout < CSOS_SETUP_MIN_TIMEOUT)
+        {
+            Config->BootTimeout = CSOS_SETUP_MIN_TIMEOUT;
+        }
+        else if (Nv.BootTimeout > CSOS_SETUP_MAX_TIMEOUT)
+        {
+            Config->BootTimeout = CSOS_SETUP_MAX_TIMEOUT;
+        }
+        else
+        {
+            Config->BootTimeout = Nv.BootTimeout;
+        }
+    }
+    if (!SeenAutoBoot)
+    {
+        Config->AutoBoot = (Nv.AutoBoot == 0) ? 0 : 1;
+    }
+    if (mWantGopW == 0 && Nv.GopModeSet != 0)
+    {
+        Config->GopMode = Nv.GopMode;
+        Config->GopModeSet = 1;
+    }
+}
 
 STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL mClrBg;
 STATIC EFI_GRAPHICS_OUTPUT_BLT_PIXEL mClrSurface;
@@ -138,54 +414,218 @@ VOID SetupLoadDefaults(
 
 STATIC
 EFI_STATUS
-SetupLoadFromVariable(
+SetupLoadFromFile(
+    IN EFI_HANDLE ImageHandle,
     OUT CSOS_BOOT_SETUP *Config)
 {
+    EFI_FILE_PROTOCOL *Root = NULL;
     EFI_STATUS Status;
-    UINTN Size;
+    EFI_PHYSICAL_ADDRESS Kept = 0;
+    UINTN KeptSize = 0;
+    BOOLEAN SeenTimeout = FALSE;
+    BOOLEAN SeenAutoBoot = FALSE;
 
     SetupLoadDefaults(Config);
+    mWantGopW = 0;
+    mWantGopH = 0;
 
-    Size = sizeof(*Config);
-    Status = gRT->GetVariable(
-        CSOS_SETUP_VARIABLE_NAME,
-        &gCsosBootSetupFormsetGuid,
-        NULL,
-        &Size,
-        Config);
-    if (EFI_ERROR(Status))
+    Status = SetupOpenEspRoot(ImageHandle, &Root);
+    if (!EFI_ERROR(Status))
     {
-        SetupLoadDefaults(Config);
-        return Status;
+        Status = LoadBootConfig(Root, L"\\csos.cfg", &Kept, &KeptSize);
+        Root->Close(Root);
+        if (!EFI_ERROR(Status) && Kept != 0 && KeptSize != 0)
+        {
+            SetupApplyParsedFile(
+                (CONST CHAR8 *)(UINTN)Kept, KeptSize, Config,
+                &SeenTimeout, &SeenAutoBoot);
+            gBS->FreePages(Kept, EFI_SIZE_TO_PAGES(KeptSize));
+        }
     }
+    SetupSeedFromNvram(SeenTimeout, SeenAutoBoot, Config);
+    return EFI_SUCCESS;
+}
 
-    /* Clamp timeout to the documented range. */
-    /* Below minimum heals to 3 seconds. */
-    if (Config->BootTimeout < CSOS_SETUP_MIN_TIMEOUT)
-    {
-        Config->BootTimeout = CSOS_SETUP_MIN_TIMEOUT;
-    }
-    else if (Config->BootTimeout > CSOS_SETUP_MAX_TIMEOUT)
-    {
-        Config->BootTimeout = CSOS_SETUP_MAX_TIMEOUT;
-    }
+/* Merge the three keys back into the full text: replace matched lines in
+   place, keep everything else (comments/mounts) byte-identical. */
+STATIC
+EFI_STATUS
+SetupBuildMergedText(
+    IN CONST CHAR8 *Old,
+    IN UINTN OldSize,
+    IN CONST CHAR8 *TimeoutVal,
+    IN CONST CHAR8 *AutoBootVal,
+    IN CONST CHAR8 *ResVal,
+    OUT CHAR8 **NewText,
+    OUT UINTN *NewSize)
+{
+    CHAR8 *Buf;
+    UINTN Cap;
+    UINTN Len = 0;
+    UINTN i = 0;
+    BOOLEAN DoneTimeout = FALSE;
+    BOOLEAN DoneAutoBoot = FALSE;
+    BOOLEAN DoneRes = (ResVal == NULL);
 
+    Cap = OldSize + 96;
+    Buf = AllocatePool(Cap);
+    if (Buf == NULL)
+    {
+        return EFI_OUT_OF_RESOURCES;
+    }
+    while (i < OldSize)
+    {
+        UINTN ls = i;
+        UINTN le = i;
+        UINTN cs;
+        UINTN ce;
+        UINTN ps;
+
+        while (le < OldSize && Old[le] != '\n')
+        {
+            le++;
+        }
+        cs = ls;
+        ce = le;
+        while (ce > cs && (Old[ce - 1] == '\r' || Old[ce - 1] == ' ' ||
+                           Old[ce - 1] == '\t'))
+        {
+            ce--;
+        }
+        ps = cs;
+        while (ps < ce && (Old[ps] == ' ' || Old[ps] == '\t'))
+        {
+            ps++;
+        }
+        if (ps < ce && Old[ps] != '#' &&
+            !DoneTimeout && CfgKeyAtLine(Old + ps, ce - ps, "timeout"))
+        {
+            Len += (UINTN)AsciiSPrint(Buf + Len, Cap - Len, "timeout=%a\n", TimeoutVal);
+            DoneTimeout = TRUE;
+        }
+        else if (
+            ps < ce && Old[ps] != '#' && !DoneAutoBoot &&
+            CfgKeyAtLine(Old + ps, ce - ps, "autoboot"))
+        {
+            Len += (UINTN)AsciiSPrint(Buf + Len, Cap - Len, "autoboot=%a\n", AutoBootVal);
+            DoneAutoBoot = TRUE;
+        }
+        else if (
+            ResVal != NULL && ps < ce && Old[ps] != '#' && !DoneRes &&
+            CfgKeyAtLine(Old + ps, ce - ps, "resolution"))
+        {
+            Len += (UINTN)AsciiSPrint(Buf + Len, Cap - Len, "resolution=%a\n", ResVal);
+            DoneRes = TRUE;
+        }
+        else
+        {
+            UINTN CopyEnd = (le < OldSize) ? le + 1 : le;
+
+            if (Len + (CopyEnd - ls) > Cap)
+            {
+                FreePool(Buf);
+                return EFI_OUT_OF_RESOURCES;
+            }
+            CopyMem(Buf + Len, Old + ls, CopyEnd - ls);
+            Len += CopyEnd - ls;
+        }
+        i = (le < OldSize) ? le + 1 : OldSize;
+    }
+    if (!DoneTimeout)
+    {
+        Len += (UINTN)AsciiSPrint(Buf + Len, Cap - Len, "timeout=%a\n", TimeoutVal);
+    }
+    if (!DoneAutoBoot)
+    {
+        Len += (UINTN)AsciiSPrint(Buf + Len, Cap - Len, "autoboot=%a\n", AutoBootVal);
+    }
+    if (ResVal != NULL && !DoneRes)
+    {
+        Len += (UINTN)AsciiSPrint(Buf + Len, Cap - Len, "resolution=%a\n", ResVal);
+    }
+    *NewText = Buf;
+    *NewSize = Len;
     return EFI_SUCCESS;
 }
 
 STATIC
 EFI_STATUS
-SetupSaveToVariable(
+SetupSaveToFile(
+    IN EFI_HANDLE ImageHandle,
     IN CONST CSOS_BOOT_SETUP *Config)
 {
-    return gRT->SetVariable(
+    EFI_FILE_PROTOCOL *Root = NULL;
+    EFI_STATUS Status;
+    EFI_PHYSICAL_ADDRESS Kept = 0;
+    UINTN KeptSize = 0;
+    CHAR8 TimeoutVal[16];
+    CHAR8 AutoBootVal[2];
+    CHAR8 ResVal[32];
+    CHAR8 *ResPtr = NULL;
+    CHAR8 *NewText = NULL;
+    UINTN NewSize = 0;
+
+    AsciiSPrint(TimeoutVal, sizeof(TimeoutVal), "%u", Config->BootTimeout);
+    AutoBootVal[0] = (Config->AutoBoot == 0) ? '0' : '1';
+    AutoBootVal[1] = '\0';
+    /* Also persist resolution=WxH for the selected GOP mode so the kernel
+       Bochs modeset lands on the same size. */
+    if (Config->GopModeSet != 0 && mGopModes != NULL && mNumGopModes != 0 &&
+        Config->GopMode < mNumGopModes)
+    {
+        AsciiSPrint(
+            ResVal, sizeof(ResVal), "%ux%u",
+            mGopModes[Config->GopMode].X, mGopModes[Config->GopMode].Y);
+        ResPtr = ResVal;
+    }
+
+    Status = SetupOpenEspRoot(ImageHandle, &Root);
+    if (EFI_ERROR(Status))
+    {
+        return Status;
+    }
+    Status = LoadBootConfig(Root, L"\\csos.cfg", &Kept, &KeptSize);
+    if (Status == EFI_NOT_FOUND || Kept == 0)
+    {
+        /* Missing file: build the three keys from empty text. */
+        Kept = 0;
+        KeptSize = 0;
+    }
+    else if (EFI_ERROR(Status))
+    {
+        /* A broken read must not be written back: an empty merge would eat
+           the mount lines. */
+        Root->Close(Root);
+        return Status;
+    }
+    Status = SetupBuildMergedText(
+        (CONST CHAR8 *)(UINTN)Kept, KeptSize, TimeoutVal, AutoBootVal, ResPtr,
+        &NewText, &NewSize);
+    if (Kept != 0)
+    {
+        gBS->FreePages(Kept, EFI_SIZE_TO_PAGES(KeptSize));
+    }
+    if (EFI_ERROR(Status))
+    {
+        Root->Close(Root);
+        return Status;
+    }
+    Status = SaveBootConfig(Root, L"\\csos.cfg", NewText, NewSize);
+    FreePool(NewText);
+    Root->Close(Root);
+    if (EFI_ERROR(Status))
+    {
+        return Status;
+    }
+    /* Write-back succeeded: drop the legacy NVRAM variable so csos.cfg is
+       the single source of truth. */
+    gRT->SetVariable(
         CSOS_SETUP_VARIABLE_NAME,
         &gCsosBootSetupFormsetGuid,
-        EFI_VARIABLE_NON_VOLATILE |
-            EFI_VARIABLE_BOOTSERVICE_ACCESS |
-            EFI_VARIABLE_RUNTIME_ACCESS,
-        sizeof(*Config),
-        (VOID *)Config);
+        0,
+        0,
+        NULL);
+    return EFI_SUCCESS;
 }
 
 STATIC
@@ -670,7 +1110,7 @@ VOID DrawSetupScreen(
     RowY += RowH;
 
 
-    /* GOP mode row (always selectable; stored to NVRAM on Save & Boot) */
+    /* GOP mode row (always selectable; saved into csos.cfg on Save & Boot) */
 
     RowBg = (mFocus == FocusGopMode) ? &mClrFocus : &mClrSurface;
     LabelClr = &mClrText;
@@ -910,7 +1350,7 @@ CsosSetupUtilityInit(
 {
     EFI_STATUS Status;
 
-    (VOID) ImageHandle;
+    mImageHandle = ImageHandle;
 
     mGop = NULL;
     mHiiFont = NULL;
@@ -919,7 +1359,7 @@ CsosSetupUtilityInit(
     mGopModes = NULL;
     mFocus = FocusBootTimeout;
 
-    SetupLoadFromVariable(&mSetupConfig);
+    SetupLoadFromFile(ImageHandle, &mSetupConfig);
 
     Status = gBS->LocateProtocol(
         &gEfiGraphicsOutputProtocolGuid,
@@ -939,6 +1379,25 @@ CsosSetupUtilityInit(
     if (mSetupConfig.GopMode >= mNumGopModes)
     {
         mSetupConfig.GopMode = 0;
+    }
+
+    /* Translate csos.cfg resolution=WxH into a GOP index here (table order
+       is unstable across firmware, so match by dimensions only). */
+    if (mWantGopW != 0 && mWantGopH != 0 && mNumGopModes != 0)
+    {
+        UINTN m;
+
+        mSetupConfig.GopMode = 0;
+        mSetupConfig.GopModeSet = 0;
+        for (m = 0; m < mNumGopModes; m++)
+        {
+            if (mGopModes[m].X == mWantGopW && mGopModes[m].Y == mWantGopH)
+            {
+                mSetupConfig.GopMode = (UINT32)m;
+                mSetupConfig.GopModeSet = 1;
+                break;
+            }
+        }
     }
 
     UpdateCurrentGopModeDesc(&mSetupConfig);
@@ -1030,7 +1489,7 @@ CsosSetupUtilityRun(
 
         case SCAN_F10:
             *BootRequested = TRUE;
-            return SetupSaveToVariable(&mSetupConfig);
+            return SetupSaveToFile(mImageHandle, &mSetupConfig);
 
         default:
             break;
@@ -1048,7 +1507,7 @@ CsosSetupUtilityRun(
             if (mFocus == FocusActionSaveBoot)
             {
                 *BootRequested = TRUE;
-                return SetupSaveToVariable(&mSetupConfig);
+                return SetupSaveToFile(mImageHandle, &mSetupConfig);
             }
 
             if (mFocus == FocusActionBoot)

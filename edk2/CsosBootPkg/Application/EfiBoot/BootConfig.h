@@ -20,4 +20,18 @@ LoadBootConfig(
     OUT EFI_PHYSICAL_ADDRESS *ConfigAddr,
     OUT UINTN *ConfigSize);
 
+/* Atomically replace csos.cfg (delete + create): old tail never survives. */
+/* Missing file is created. Close() flushes to the FAT volume. */
+/* @param Root Opened ESP volume root. */
+/* @param FileName Config path, e.g. L"\\csos.cfg". */
+/* @param Text New file content (CHAR8, LF line endings). */
+/* @param Size Bytes to write. */
+/* @retval EFI_SUCCESS Written and flushed. */
+EFI_STATUS
+SaveBootConfig(
+    IN EFI_FILE_PROTOCOL *Root,
+    IN CHAR16 *FileName,
+    IN CHAR8 *Text,
+    IN UINTN Size);
+
 #endif

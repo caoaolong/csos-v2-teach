@@ -12,8 +12,11 @@
 #define TERM_FG 0x00E8E8E8u
 #define TERM_DIM_FG 0x00888888u
 
-#define TERM_MAX_COLS 160
-#define TERM_MAX_ROWS 64
+/* 网格 backing 上限（纯防爆 sanity 值，不参与布局）：
+ * 网格 = 窗口尺寸 ÷ 字号，上限只兜住 Bochs 候选最大档以上；
+ * 内容永远左上起排（现代终端铁律），留白只出现在右/下 */
+#define TERM_MAX_COLS 256
+#define TERM_MAX_ROWS 96
 
 static int g_cmdfd = -1; /* 写：渲染命令 */
 static int g_evtfd = -1; /* 读：输入事件 */
@@ -29,7 +32,7 @@ static uint32_t g_cx;
 static uint32_t g_cy;
 static uint32_t g_cw = COMP_FONT_W; /* 单元格像素宽 = 8*scale */
 static uint32_t g_ch = COMP_FONT_H; /* 单元格像素高 = 16*scale */
-static uint32_t g_ox;               /* 网格居中偏移 */
+static uint32_t g_ox;               /* 恒 0：左上对齐，不居中 */
 static uint32_t g_oy;
 
 static char g_screen[TERM_MAX_ROWS][TERM_MAX_COLS];
@@ -645,9 +648,9 @@ static int term_handshake(void)
         g_cols = TERM_MAX_COLS;
     if (g_rows > TERM_MAX_ROWS)
         g_rows = TERM_MAX_ROWS;
-    /* 网格小于窗口时居中留边 */
-    g_ox = (w.w > g_cols * g_cw) ? (w.w - g_cols * g_cw) / 2 : 0;
-    g_oy = (w.h > g_rows * g_ch) ? (w.h - g_rows * g_ch) / 2 : 0;
+    /* 左上锚定：网格从 (0,0) 起排，多余像素只留右/下（现代终端铁律） */
+    g_ox = 0;
+    g_oy = 0;
     printf("term: win %ux%u scale %u grid %ux%u\n",
            w.w, w.h, scale, g_cols, g_rows);
     return 0;
@@ -1391,8 +1394,9 @@ int main()
                         g_rows = TERM_MAX_ROWS;
                     if (g_cols == 0 || g_rows < 2)
                         goto reconnect;
-                    g_ox = (nw->w > g_cols * g_cw) ? (nw->w - g_cols * g_cw) / 2 : 0;
-                    g_oy = (nw->h > g_rows * g_ch) ? (nw->h - g_rows * g_ch) / 2 : 0;
+                    /* 左上锚定：网格从 (0,0) 起排，多余像素只留右/下 */
+                    g_ox = 0;
+                    g_oy = 0;
                     if (g_cx >= g_cols)
                         g_cx = g_cols - 1;
                     if (g_cy >= g_rows)

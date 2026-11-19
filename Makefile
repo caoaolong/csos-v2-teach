@@ -117,6 +117,7 @@ qemu: master
 		-drive format=raw,file=qemu/DMBR.img,if=ide,index=2,media=disk \
 		-drive format=raw,file=qemu/DGPT.img,if=ide,index=3,media=disk \
 		-net none \
+		-vga std \
 		-serial stdio \
 		-debugcon file:debug.log \
 		-global isa-debugcon.iobase=0x402

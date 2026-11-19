@@ -13,6 +13,8 @@
 #include <kernel/pic.h>
 #include <kernel/pit.h>
 #include <kernel/acpi.h>
+#include <kernel/pci.h>
+#include <kernel/gpu/bochs.h>
 #include <kernel/apic.h>
 #include <kernel/apic/ioapic.h>
 #include <kernel/kbd.h>
@@ -52,6 +54,8 @@ void kernel_main(boot_info_t *boot_info)
     init_idt();
     init_syscall();
 
+    init_pci(); /* 纯枚举，只用端口 IO + 串口，可先于 PMM */
+    bochs_modeset(boot_info); /* 抢在映射显存前改写 boot_info；失败即保持 GOP */
     init_pmm(boot_info);
     init_vmm(boot_info);
     init_heap();
