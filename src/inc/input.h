@@ -71,6 +71,18 @@ typedef struct input_event
 #define INPUT_KEY_K 37
 #define INPUT_KEY_L 38
 #define INPUT_KEY_LEFTSHIFT 42
+#define INPUT_KEY_RIGHTSHIFT 54
+#define INPUT_KEY_MINUS 12
+#define INPUT_KEY_EQUAL 13
+#define INPUT_KEY_LEFTBRACE 26
+#define INPUT_KEY_RIGHTBRACE 27
+#define INPUT_KEY_SEMICOLON 39
+#define INPUT_KEY_APOSTROPHE 40
+#define INPUT_KEY_GRAVE 41
+#define INPUT_KEY_BACKSLASH 43
+#define INPUT_KEY_COMMA 51
+#define INPUT_KEY_DOT 52
+#define INPUT_KEY_SLASH 53
 #define INPUT_KEY_Z 44
 #define INPUT_KEY_X 45
 #define INPUT_KEY_C 46
@@ -88,9 +100,126 @@ typedef struct input_event
 #define INPUT_KEY_PRESS 1
 #define INPUT_KEY_RELEASE 0
 
-/* keycode → ASCII */
+/* keycode → ASCII（shift 非零即按住 Shift，大写 + 上档符号） */
+static inline char input_key_to_ascii_shift(uint16_t code, int shift)
+{
+    /* 字母：Shift 切大小写 */
+    switch (code)
+    {
+    case INPUT_KEY_Q:
+        return shift ? 'Q' : 'q';
+    case INPUT_KEY_W:
+        return shift ? 'W' : 'w';
+    case INPUT_KEY_E:
+        return shift ? 'E' : 'e';
+    case INPUT_KEY_R:
+        return shift ? 'R' : 'r';
+    case INPUT_KEY_T:
+        return shift ? 'T' : 't';
+    case INPUT_KEY_Y:
+        return shift ? 'Y' : 'y';
+    case INPUT_KEY_U:
+        return shift ? 'U' : 'u';
+    case INPUT_KEY_I:
+        return shift ? 'I' : 'i';
+    case INPUT_KEY_O:
+        return shift ? 'O' : 'o';
+    case INPUT_KEY_P:
+        return shift ? 'P' : 'p';
+    case INPUT_KEY_A:
+        return shift ? 'A' : 'a';
+    case INPUT_KEY_S:
+        return shift ? 'S' : 's';
+    case INPUT_KEY_D:
+        return shift ? 'D' : 'd';
+    case INPUT_KEY_F:
+        return shift ? 'F' : 'f';
+    case INPUT_KEY_G:
+        return shift ? 'G' : 'g';
+    case INPUT_KEY_H:
+        return shift ? 'H' : 'h';
+    case INPUT_KEY_J:
+        return shift ? 'J' : 'j';
+    case INPUT_KEY_K:
+        return shift ? 'K' : 'k';
+    case INPUT_KEY_L:
+        return shift ? 'L' : 'l';
+    case INPUT_KEY_Z:
+        return shift ? 'Z' : 'z';
+    case INPUT_KEY_X:
+        return shift ? 'X' : 'x';
+    case INPUT_KEY_C:
+        return shift ? 'C' : 'c';
+    case INPUT_KEY_V:
+        return shift ? 'V' : 'v';
+    case INPUT_KEY_B:
+        return shift ? 'B' : 'b';
+    case INPUT_KEY_N:
+        return shift ? 'N' : 'n';
+    case INPUT_KEY_M:
+        return shift ? 'M' : 'm';
+    /* 数字行上档符号 */
+    case INPUT_KEY_1:
+        return shift ? '!' : '1';
+    case INPUT_KEY_2:
+        return shift ? '@' : '2';
+    case INPUT_KEY_3:
+        return shift ? '#' : '3';
+    case INPUT_KEY_4:
+        return shift ? '$' : '4';
+    case INPUT_KEY_5:
+        return shift ? '%' : '5';
+    case INPUT_KEY_6:
+        return shift ? '^' : '6';
+    case INPUT_KEY_7:
+        return shift ? '&' : '7';
+    case INPUT_KEY_8:
+        return shift ? '*' : '8';
+    case INPUT_KEY_9:
+        return shift ? '(' : '9';
+    case INPUT_KEY_0:
+        return shift ? ')' : '0';
+    /* 符号区（美式布局） */
+    case INPUT_KEY_MINUS:
+        return shift ? '_' : '-';
+    case INPUT_KEY_EQUAL:
+        return shift ? '+' : '=';
+    case INPUT_KEY_LEFTBRACE:
+        return shift ? '{' : '[';
+    case INPUT_KEY_RIGHTBRACE:
+        return shift ? '}' : ']';
+    case INPUT_KEY_SEMICOLON:
+        return shift ? ':' : ';';
+    case INPUT_KEY_APOSTROPHE:
+        return shift ? '"' : '\'';
+    case INPUT_KEY_GRAVE:
+        return shift ? '~' : '`';
+    case INPUT_KEY_BACKSLASH:
+        return shift ? '|' : '\\';
+    case INPUT_KEY_COMMA:
+        return shift ? '<' : ',';
+    case INPUT_KEY_DOT:
+        return shift ? '>' : '.';
+    case INPUT_KEY_SLASH:
+        return shift ? '?' : '/';
+    case INPUT_KEY_SPACE:
+        return ' ';
+    case INPUT_KEY_ENTER:
+        return '\n';
+    case INPUT_KEY_BACKSPACE:
+        return '\b';
+    case INPUT_KEY_TAB:
+        return '\t';
+    case INPUT_KEY_ESC:
+        return 0x1B;
+    default:
+        return 0;
+    }
+}
+
 static inline char input_key_to_ascii(uint16_t code)
 {
+    /* 小版本：仅供 compositor 日志等不需 Shift 的调用，体积极小 */
     switch (code)
     {
     case INPUT_KEY_1:
@@ -165,6 +294,28 @@ static inline char input_key_to_ascii(uint16_t code)
         return 'n';
     case INPUT_KEY_M:
         return 'm';
+    case INPUT_KEY_MINUS:
+        return '-';
+    case INPUT_KEY_EQUAL:
+        return '=';
+    case INPUT_KEY_LEFTBRACE:
+        return '[';
+    case INPUT_KEY_RIGHTBRACE:
+        return ']';
+    case INPUT_KEY_SEMICOLON:
+        return ';';
+    case INPUT_KEY_APOSTROPHE:
+        return '\'';
+    case INPUT_KEY_GRAVE:
+        return '`';
+    case INPUT_KEY_BACKSLASH:
+        return '\\';
+    case INPUT_KEY_COMMA:
+        return ',';
+    case INPUT_KEY_DOT:
+        return '.';
+    case INPUT_KEY_SLASH:
+        return '/';
     case INPUT_KEY_SPACE:
         return ' ';
     case INPUT_KEY_ENTER:

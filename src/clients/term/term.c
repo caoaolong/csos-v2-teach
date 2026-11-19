@@ -42,6 +42,24 @@ static int g_my;
 static uint32_t g_mbuttons;
 static uint32_t g_focused; /* compositor 告知的焦点状态 */
 
+/* shell 行缓冲与外跑捕获缓冲放 bss（用户栈仅一页） */
+#define SHELL_MAX_LINE 256
+#define SHELL_MAX_ARGS 16
+static char g_line[SHELL_MAX_LINE + 1];
+static unsigned long g_line_len;
+static char g_argbuf[SHELL_MAX_LINE + 1];
+static char *g_argv[SHELL_MAX_ARGS + 1];
+static uint8_t g_cap[256];
+
+/* 文本光标（下划线式）：主循环空闲时按节拍闪烁 */
+#define CURSOR_BLINK_TICKS 100 /* idle 循环约 5ms/次 -> 约 500ms */
+static int g_cursor_on;
+static unsigned long g_tick;
+static unsigned long g_last_toggle;
+
+/* Shift 电平：左右 Shift 任一按住即置位，term 自跟踪（compositor 只透传原始事件） */
+static int g_shift;
+
 static int send_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
 {
     uint8_t p[20];
@@ -195,10 +213,40 @@ static int draw_status(void)
     return 0;
 }
 
+static int cursor_hide(void)
+{
+    if (!g_cursor_on)
+        return 0;
+    g_cursor_on = 0;
+    return draw_cell(g_cx, g_cy);
+}
+
+static int cursor_show(void)
+{
+    uint32_t h;
+    uint32_t y;
+
+    if (g_cursor_on)
+        return 0;
+    if (g_cx >= g_cols || g_cy + 1 >= g_rows)
+        return 0;
+    h = g_cw >= 8 ? 2 * (g_cw / 8) : 2;
+    if (h < 2)
+        h = 2;
+    if (h > g_ch)
+        h = g_ch;
+    y = cell_y(g_cy) + g_ch - h;
+    if (send_fill(cell_x(g_cx), y, g_cw, h, TERM_FG) != 0)
+        return -1;
+    g_cursor_on = 1;
+    return 0;
+}
+
 static int full_redraw(void)
 {
     uint32_t cy;
 
+    g_cursor_on = 0; /* 整屏重写，光标条已失效 */
     if (send_fill(0, 0, g_ww, g_wh, TERM_BG) != 0)
         return -1;
     for (cy = 0; cy + 1 < g_rows; cy++)
@@ -225,6 +273,12 @@ static void scroll_up(void)
 
 static int term_putc(char ch)
 {
+    if (g_cursor_on)
+    {
+        g_cursor_on = 0;
+        if (draw_cell(g_cx, g_cy) != 0)
+            return -1;
+    }
     if (ch == '\n')
     {
         g_cx = 0;
@@ -393,6 +447,230 @@ static void term_reset(void)
     g_mx = 0;
     g_my = 0;
     g_mbuttons = 0;
+    g_line_len = 0;
+    g_cursor_on = 0;
+    g_last_toggle = g_tick;
+    g_shift = 0;
+}
+
+static int shell_prompt()
+{
+    return term_puts("> ");
+}
+
+static int shell_put_int(long v)
+{
+    char buf[24];
+    char rev[24];
+    int n = 0;
+    int neg = 0;
+    int i;
+
+    if (v < 0)
+    {
+        neg = 1;
+        v = -v;
+    }
+    if (v == 0)
+        rev[n++] = '0';
+    while (v > 0 && n < 24)
+    {
+        rev[n++] = (char)('0' + v % 10);
+        v /= 10;
+    }
+    if (neg && n < 24)
+        rev[n++] = '-';
+    for (i = 0; i < n; i++)
+        buf[i] = rev[n - 1 - i];
+    buf[n] = '\0';
+    return term_puts(buf);
+}
+
+/* 行切分为 argv（只按空格/制表，无引号）；返回 argc */
+static int shell_parse()
+{
+    int argc = 0;
+    unsigned long i = 0;
+
+    while (i < g_line_len)
+    {
+        while (i < g_line_len &&
+               (g_line[i] == ' ' || g_line[i] == '\t'))
+            i++;
+        if (i >= g_line_len)
+            break;
+        if (argc >= SHELL_MAX_ARGS)
+            break;
+        g_argv[argc++] = g_argbuf + i;
+        while (i < g_line_len &&
+               g_line[i] != ' ' && g_line[i] != '\t')
+        {
+            g_argbuf[i] = g_line[i];
+            i++;
+        }
+        g_argbuf[i] = '\0';
+        i++;
+    }
+    g_argv[argc] = (char *)0;
+    return argc;
+}
+
+/* 外跑绝对路径程序：stdout/stderr 进管道回显，EOF 后报 exit 码 */
+static int shell_run_external(int argc)
+{
+    int fds[2];
+    long pid;
+    long n;
+    unsigned long k;
+    int st = 0;
+
+    (void)argc;
+    if (g_argv[0][0] != '/')
+    {
+        if (term_puts("use absolute path, e.g. /bin/term\n") != 0)
+            return -1;
+        return shell_prompt();
+    }
+    if (pipe(fds) != 0)
+    {
+        if (term_puts("pipe failed\n") != 0)
+            return -1;
+        return shell_prompt();
+    }
+    pid = fork();
+    if (pid < 0)
+    {
+        close(fds[0]);
+        close(fds[1]);
+        if (term_puts("fork failed\n") != 0)
+            return -1;
+        return shell_prompt();
+    }
+    if (pid == 0)
+    {
+        close(fds[0]);
+        dup2(fds[1], STDOUT_FILENO);
+        dup2(fds[1], STDERR_FILENO);
+        if (fds[1] != STDOUT_FILENO && fds[1] != STDERR_FILENO)
+            close(fds[1]);
+        execve(g_argv[0], g_argv, (char *const *)0);
+        write(STDOUT_FILENO, "exec failed\n", 13);
+        exit(1);
+    }
+    close(fds[1]);
+    for (;;)
+    {
+        n = read(fds[0], g_cap, sizeof(g_cap));
+        if (n == 0)
+            break; /* 写端全关 */
+        if (n < 0)
+            break; /* pipe 无读端之外的错误直接收尾 */
+        for (k = 0; k < (unsigned long)n; k++)
+        {
+            if (term_putc((char)g_cap[k]) != 0)
+            {
+                close(fds[0]);
+                wait(&st);
+                return -1;
+            }
+        }
+    }
+    close(fds[0]);
+    wait(&st);
+    if (term_puts("[exit ") != 0)
+        return -1;
+    if (shell_put_int((long)st) != 0)
+        return -1;
+    if (term_puts("]\n") != 0)
+        return -1;
+    return shell_prompt();
+}
+
+/* 执行一行：内建优先，否则外跑；返回 0 正常，-1 需重连 */
+static int shell_run_line()
+{
+    int argc;
+
+    if (term_putc('\n') != 0)
+        return -1;
+    if (g_line_len == 0)
+        return shell_prompt();
+    g_line[g_line_len] = '\0';
+    {
+        unsigned long i;
+
+        for (i = 0; i <= g_line_len; i++)
+            g_argbuf[i] = g_line[i];
+    }
+    argc = shell_parse();
+    g_line_len = 0;
+    if (argc <= 0)
+        return shell_prompt();
+    if (strcmp(g_argv[0], "help") == 0)
+    {
+        if (term_puts("builtins: help echo clear pid exit\nrun: /bin/term /sbin/* (abs path)\n") != 0)
+            return -1;
+        return shell_prompt();
+    }
+    if (strcmp(g_argv[0], "echo") == 0)
+    {
+        int i;
+
+        for (i = 1; i < argc; i++)
+        {
+            if (i > 1 && term_putc(' ') != 0)
+                return -1;
+            if (term_puts(g_argv[i]) != 0)
+                return -1;
+        }
+        if (term_putc('\n') != 0)
+            return -1;
+        return shell_prompt();
+    }
+    if (strcmp(g_argv[0], "clear") == 0)
+    {
+        term_reset();
+        if (full_redraw() != 0)
+            return -1;
+        return shell_prompt();
+    }
+    if (strcmp(g_argv[0], "pid") == 0)
+    {
+        if (shell_put_int(getpid()) != 0)
+            return -1;
+        if (term_putc('\n') != 0)
+            return -1;
+        return shell_prompt();
+    }
+    if (strcmp(g_argv[0], "exit") == 0)
+    {
+        comp_send(g_cmdfd, COMP_MSG_DESTROY, NULL, 0);
+        exit(0);
+    }
+    return shell_run_external(argc);
+}
+
+/* 键入一字：回显 + 行缓冲，回车执行；返回 0 正常，-1 需重连 */
+static int shell_on_key(char ch)
+{
+    if (ch == '\b')
+    {
+        if (g_line_len > 0)
+        {
+            g_line_len--;
+            if (term_putc('\b') != 0)
+                return -1;
+        }
+        return 0;
+    }
+    if (ch == '\n')
+        return shell_run_line();
+    if (ch == 0 || ch < 32)
+        return 0;
+    if (g_line_len >= SHELL_MAX_LINE)
+        return 0; /* 行满丢弃 */
+    g_line[g_line_len++] = ch;
+    return term_putc(ch);
 }
 
 int main()
@@ -406,7 +684,9 @@ int main()
     term_reset();
     if (full_redraw() != 0)
         exit(1);
-    if (term_puts("csos term v1 -- pipe client of compositor\n> ") != 0)
+    if (term_puts("csos term v2 -- minimal shell\n") != 0)
+        exit(1);
+    if (shell_prompt() != 0)
         exit(1);
     for (;;)
     {
@@ -520,9 +800,15 @@ int main()
                                 g_mbuttons &= ~bit;
                             continue;
                         }
+                        if (code == INPUT_KEY_LEFTSHIFT ||
+                            code == INPUT_KEY_RIGHTSHIFT)
+                        {
+                            g_shift = evs[i].value ? 1 : 0;
+                            continue;
+                        }
                         if (evs[i].value != INPUT_KEY_PRESS)
                             continue;
-                        if (term_putc(input_key_to_ascii((uint16_t)code)) != 0)
+                        if (shell_on_key(input_key_to_ascii_shift((uint16_t)code, g_shift)) != 0)
                             goto reconnect;
                     }
                     else if (evs[i].type == INPUT_EV_REL ||
@@ -532,6 +818,22 @@ int main()
                     }
                 }
             }
+        }
+        g_tick++;
+        if (!idle)
+        {
+            /* 有输入：保持实心可见，重启闪烁周期 */
+            if (!g_cursor_on && cursor_show() != 0)
+                goto reconnect;
+            g_last_toggle = g_tick;
+        }
+        else if (g_tick - g_last_toggle >= CURSOR_BLINK_TICKS)
+        {
+            int r = g_cursor_on ? cursor_hide() : cursor_show();
+
+            if (r != 0)
+                goto reconnect;
+            g_last_toggle = g_tick;
         }
         if (idle)
             sleep(5);
@@ -546,7 +848,9 @@ int main()
         term_reset();
         if (full_redraw() != 0)
             exit(1);
-        if (term_puts("csos term v1 -- reconnected\n> ") != 0)
+        if (term_puts("csos term v2 -- reconnected\n") != 0)
+            exit(1);
+        if (shell_prompt() != 0)
             exit(1);
     }
     return 0;
