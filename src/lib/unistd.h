@@ -50,4 +50,11 @@ long fbctl(int op);
 /* 成功 0，失败 -1 并填 errno（EEXIST=撞名，ENOENT=路径非法） */
 long mkfifo(const char *path, int mode);
 
+/* 工作目录：chdir 切换，getcwd 拷出（成功 0，失败 -1 并填 errno） */
+long chdir(const char *path);
+long getcwd(char *buf, unsigned long size);
+
+/* 列目录：buf 为调用方提供的 csos_dirent_t[cap]，返回条数，失败 -1 并填 errno */
+long getdents(const char *path, void *buf, unsigned long cap);
+
 #endif /* CSOS_LIBC_UNISTD_H */

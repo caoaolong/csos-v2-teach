@@ -564,6 +564,12 @@ void task_exit_current(int code)
     }
     spin_unlock_irqrestore(&g_sched_lock, flags);
 
+    /* exit 即关 fd（类 Unix 语义）：僵尸不再持有任何描述符，
+     * 否则管道写端引用永不归零，父 read-until-EOF 卡死
+     * （term 捕获子进程输出时先读尽再 wait，必中此死锁）；
+     * 回收时的 fd_table_cleanup 会因此变为空操作，保留无妨 */
+    fd_table_cleanup(cur);
+
     fput_string("[USER] task '%s' pid=%d exit(%d)\n",
                 cur->name != NULL ? cur->name : "?",
                 cur->pid, code);

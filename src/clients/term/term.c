@@ -57,6 +57,10 @@ static int g_cursor_on;
 static unsigned long g_tick;
 static unsigned long g_last_toggle;
 
+/* shell 杂项缓冲放 bss（用户栈仅一页）：cwd 显示 + 裸命令的 /bin/ 拼接 */
+static char g_cwd_buf[256];
+static char g_exec_path[256 + 6];
+
 /* Shift 电平：左右 Shift 任一按住即置位，term 自跟踪（compositor 只透传原始事件） */
 static int g_shift;
 
@@ -455,6 +459,12 @@ static void term_reset(void)
 
 static int shell_prompt()
 {
+    /* cwd 提示符：拿不到则退化成裸 > */
+    if (getcwd(g_cwd_buf, sizeof(g_cwd_buf)) == 0)
+    {
+        if (term_puts(g_cwd_buf) != 0)
+            return -1;
+    }
     return term_puts("> ");
 }
 
@@ -515,7 +525,7 @@ static int shell_parse()
     return argc;
 }
 
-/* 外跑绝对路径程序：stdout/stderr 进管道回显，EOF 后报 exit 码 */
+/* 外跑程序：stdout/stderr 进管道回显，EOF 后报 exit 码 */
 static int shell_run_external(int argc)
 {
     int fds[2];
@@ -523,13 +533,32 @@ static int shell_run_external(int argc)
     long n;
     unsigned long k;
     int st = 0;
+    const char *path = g_argv[0];
 
     (void)argc;
-    if (g_argv[0][0] != '/')
+    if (path[0] != '/')
     {
-        if (term_puts("use absolute path, e.g. /bin/term\n") != 0)
-            return -1;
-        return shell_prompt();
+        /* 裸命令名默认去 /bin 找（cd/pwd 之外的小工具都在那） */
+        unsigned long i = 0;
+
+        g_exec_path[0] = '/';
+        g_exec_path[1] = 'b';
+        g_exec_path[2] = 'i';
+        g_exec_path[3] = 'n';
+        g_exec_path[4] = '/';
+        while (path[i] != '\0' && i + 5 < sizeof(g_exec_path) - 1)
+        {
+            g_exec_path[5 + i] = path[i];
+            i++;
+        }
+        g_exec_path[5 + i] = '\0';
+        if (path[i] != '\0')
+        {
+            if (term_puts("command too long\n") != 0)
+                return -1;
+            return shell_prompt();
+        }
+        path = g_exec_path;
     }
     if (pipe(fds) != 0)
     {
@@ -553,7 +582,7 @@ static int shell_run_external(int argc)
         dup2(fds[1], STDERR_FILENO);
         if (fds[1] != STDOUT_FILENO && fds[1] != STDERR_FILENO)
             close(fds[1]);
-        execve(g_argv[0], g_argv, (char *const *)0);
+        execve(path, g_argv, (char *const *)0);
         write(STDOUT_FILENO, "exec failed\n", 13);
         exit(1);
     }
@@ -608,7 +637,7 @@ static int shell_run_line()
         return shell_prompt();
     if (strcmp(g_argv[0], "help") == 0)
     {
-        if (term_puts("builtins: help echo clear pid exit\nrun: /bin/term /sbin/* (abs path)\n") != 0)
+        if (term_puts("builtins: help echo clear pid cd pwd exit\nrun: ls cat (/bin/…), abs path\n") != 0)
             return -1;
         return shell_prompt();
     }
@@ -640,6 +669,46 @@ static int shell_run_line()
             return -1;
         if (term_putc('\n') != 0)
             return -1;
+        return shell_prompt();
+    }
+    if (strcmp(g_argv[0], "pwd") == 0)
+    {
+        if (getcwd(g_cwd_buf, sizeof(g_cwd_buf)) != 0)
+        {
+            if (term_puts("pwd failed\n") != 0)
+                return -1;
+            return shell_prompt();
+        }
+        if (term_puts(g_cwd_buf) != 0)
+            return -1;
+        if (term_putc('\n') != 0)
+            return -1;
+        return shell_prompt();
+    }
+    /* cd 只能是内建：fork 出的子进程改不了 shell 的目录 */
+    if (strcmp(g_argv[0], "cd") == 0)
+    {
+        const char *dst = argc > 1 ? g_argv[1] : "/";
+
+        if (chdir(dst) != 0)
+        {
+            if (errno == ENOENT)
+            {
+                if (term_puts("cd: no such dir\n") != 0)
+                    return -1;
+            }
+            else if (errno == ENOTDIR)
+            {
+                if (term_puts("cd: not a dir\n") != 0)
+                    return -1;
+            }
+            else
+            {
+                if (term_puts("cd failed\n") != 0)
+                    return -1;
+            }
+            return shell_prompt();
+        }
         return shell_prompt();
     }
     if (strcmp(g_argv[0], "exit") == 0)

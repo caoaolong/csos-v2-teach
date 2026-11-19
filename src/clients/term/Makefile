@@ -24,10 +24,10 @@ $(BUILD_DIR)/clients/term/%.o: $(SRC_DIR)/clients/term/%.c
 	$(CC) $(UFLAGS) -I$(TERM_DIR) -c -o $@ $<
 
 # term 程序：ELF 留符号供 gdb；由 init 拉起 /bin/term
-# （crt0/libc 由 term.ld 隐入；-T 置 .o 后：ld 单遍，归档需后搜）
-$(TERM_ELF): $(CRT0) $(TERM_OBJS) $(LIBC_A) $(TERM_DIR)/term.ld
+# （crt0/libc 由 user.ld 隐入；-T 置 .o 后：ld 单遍，归档需后搜）
+$(TERM_ELF): $(CRT0) $(TERM_OBJS) $(LIBC_A) $(USER_LD)
 	mkdir -p $(dir $@)
-	$(LD) -L$(BUILD_DIR)/lib -o $@ $(TERM_OBJS) -T $(TERM_DIR)/term.ld
+	$(LD) -L$(BUILD_DIR)/lib -o $@ $(TERM_OBJS) -T $(USER_LD)
 
 $(TERM_BIN): $(TERM_ELF)
 	$(OBJCOPY) -O binary $< $@

@@ -10,11 +10,15 @@ BUILD_DIR  = build
 
 KERNEL     = $(BUILD_DIR)/kernel.elf
 
+# 全用户程序统一链接脚本（默认脚本）：改布局只改 src/user.ld
+USER_LD    = $(SRC_DIR)/user.ld
+
 # 用户态 C 库与各程序构建片段（变量与规则下沉到各自目录，新增服务在此追加 include）
 include $(SRC_DIR)/lib/Makefile
 include $(SRC_DIR)/init/Makefile
 include $(SRC_DIR)/services/compositor/Makefile
 include $(SRC_DIR)/clients/term/Makefile
+include $(SRC_DIR)/cmd/Makefile
 
 CSFS       = csfs
 INIT_IMG   = qemu/DMBR.img
@@ -22,6 +26,8 @@ INIT_PART  = 1
 INIT_DST   = /sbin/init
 COMP_DST   = /sbin/compositor
 TERM_DST   = /bin/term
+LS_DST     = /bin/ls
+CAT_DST    = /bin/cat
 
 CFLAGS = -ffreestanding -mno-red-zone -g -O0 -mcmodel=large -fno-asynchronous-unwind-tables -I$(INC_DIR) -MMD -MP
 UFLAGS = -ffreestanding -mno-red-zone -fno-builtin -fno-asynchronous-unwind-tables -g -O0 -I$(LIB_DIR) -I$(INC_DIR) -MMD -MP
@@ -34,13 +40,14 @@ KERNEL_OBJS   = $(patsubst $(SRC_DIR)/%.S,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_S)) \
                 $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_SRCS_C))
 KERNEL_DEPS   = $(KERNEL_OBJS:.o=.d)
 
-all: $(KERNEL) $(INIT_ELF) $(COMP_ELF) $(TERM_ELF)
+all: $(KERNEL) $(INIT_ELF) $(COMP_ELF) $(TERM_ELF) $(LS_ELF) $(CAT_ELF)
 
 -include $(KERNEL_DEPS)
 -include $(INIT_DEPS)
 -include $(COMP_DEPS)
 -include $(TERM_DEPS)
 -include $(LIB_DEPS)
+-include $(CMD_DEPS)
 
 # 内核：CFLAGS（通配规则）
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
@@ -61,7 +68,7 @@ $(KERNEL): $(KERNEL_OBJS) $(INIT_BIN) $(KERNEL_DIR)/kernel.ld
 clean:
 	rm -rf $(BUILD_DIR)
 
-master: $(KERNEL) $(INIT_ELF) $(COMP_ELF) $(TERM_ELF) install-init install-compositor install-term
+master: $(KERNEL) $(INIT_ELF) $(COMP_ELF) $(TERM_ELF) $(LS_ELF) $(CAT_ELF) install-init install-compositor install-term install-ls install-cat
 	mkdir -p qemu/hda-contents/EFI/BOOT
 	cp -f edk2\Build\OvmfX64\NOOPT_VS2026\FV\OVMF.fd OVMF.fd
 	cp -f edk2\Build\CsosBootPkg\DEBUG_VS2026\X64\EfiBoot.efi qemu/hda-contents/EFI/BOOT/BOOTX64.EFI
@@ -69,6 +76,8 @@ master: $(KERNEL) $(INIT_ELF) $(COMP_ELF) $(TERM_ELF) install-init install-compo
 	cp -f $(INIT_ELF) qemu/hda-contents/init.elf
 	cp -f $(COMP_ELF) qemu/hda-contents/compositor.elf
 	cp -f $(TERM_ELF) qemu/hda-contents/term.elf
+	cp -f $(LS_ELF) qemu/hda-contents/ls.elf
+	cp -f $(CAT_ELF) qemu/hda-contents/cat.elf
 
 # 将 init.elf 写入根盘 FAT32 分区，供 init=/sbin/init 加载
 install-init: $(INIT_ELF)
@@ -81,6 +90,14 @@ install-compositor: $(COMP_ELF)
 # 将 term.elf 写入根盘，供 init 拉起 /bin/term
 install-term: $(TERM_ELF)
 	$(CSFS) $(INIT_IMG) cp $(TERM_ELF) $(TERM_DST) --partition $(INIT_PART) --mkdirs --overwrite
+
+# 将 ls.elf 写入根盘，供 shell 外跑 /bin/ls
+install-ls: $(LS_ELF)
+	$(CSFS) $(INIT_IMG) cp $(LS_ELF) $(LS_DST) --partition $(INIT_PART) --mkdirs --overwrite
+
+# 将 cat.elf 写入根盘，供 shell 外跑 /bin/cat
+install-cat: $(CAT_ELF)
+	$(CSFS) $(INIT_IMG) cp $(CAT_ELF) $(CAT_DST) --partition $(INIT_PART) --mkdirs --overwrite
 
 # VirtualBox：把 qemu/ 启动目录 + 数据盘打包成可运行虚拟机
 # （需 Node.js 18+、npm link 的 csos-image，以及 VBoxManage；输出在 qemu/vbox/）

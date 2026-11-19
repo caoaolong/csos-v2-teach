@@ -24,10 +24,10 @@ $(BUILD_DIR)/init/%.o: $(SRC_DIR)/init/%.c
 	$(CC) $(UFLAGS) -I$(INIT_DIR) -c -o $@ $<
 
 # init 程序：ELF 留符号供 gdb，bin 剥离后嵌入内核
-# （crt0/libc 由 init.ld 隐入；-T 置 .o 后：ld 单遍，归档需后搜）
-$(INIT_ELF): $(CRT0) $(INIT_OBJS) $(LIBC_A) $(INIT_DIR)/init.ld
+# （crt0/libc 由 user.ld 隐入；-T 置 .o 后：ld 单遍，归档需后搜）
+$(INIT_ELF): $(CRT0) $(INIT_OBJS) $(LIBC_A) $(USER_LD)
 	mkdir -p $(dir $@)
-	$(LD) -L$(BUILD_DIR)/lib -o $@ $(INIT_OBJS) -T $(INIT_DIR)/init.ld
+	$(LD) -L$(BUILD_DIR)/lib -o $@ $(INIT_OBJS) -T $(USER_LD)
 
 $(INIT_BIN): $(INIT_ELF)
 	$(OBJCOPY) -O binary $< $@

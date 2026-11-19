@@ -172,6 +172,45 @@ long mkfifo(const char *path, int mode)
     return 0;
 }
 
+/* 切换工作目录：成功 0，失败 -1 并填 errno（ENOENT/ENOTDIR） */
+long chdir(const char *path)
+{
+    long r = syscall1(SYS_CHDIR, (long)path);
+
+    if (r < 0)
+    {
+        errno = (int)-r;
+        return -1;
+    }
+    return 0;
+}
+
+/* 取当前目录：成功 0，失败 -1 并填 errno（ERANGE=缓冲太小） */
+long getcwd(char *buf, unsigned long size)
+{
+    long r = syscall2(SYS_GETCWD, (long)buf, (long)size);
+
+    if (r < 0)
+    {
+        errno = (int)-r;
+        return -1;
+    }
+    return 0;
+}
+
+/* 列目录：buf 为调用方提供的 csos_dirent_t[cap]，返回条数，失败 -1 并填 errno */
+long getdents(const char *path, void *buf, unsigned long cap)
+{
+    long r = syscall3(SYS_GETDENTS, (long)path, (long)buf, (long)cap);
+
+    if (r < 0)
+    {
+        errno = (int)-r;
+        return -1;
+    }
+    return r;
+}
+
 /* 整块显存映射进本任务：返回像素起点虚地址，失败返回 (void *)-1 */
 void *fbmap(void)
 {

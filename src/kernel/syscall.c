@@ -5,6 +5,7 @@
 #include <kernel/syscall.h>
 #include <kernel/timer.h>
 #include <abi.h>
+#include <dirent.h>
 #include <kernel/fd.h>
 #include <kernel/sched.h>
 #include <kernel/fs/vfs.h>
@@ -162,6 +163,133 @@ static void do_sys_mkfifo(exception_frame_t *frame)
         frame->rax = (uint64_t)-ENOMEM;
     else
         frame->rax = (uint64_t)-EINVAL;
+}
+
+/* chdir：切换全局工作目录（单用户教学 OS，无 per-task cwd） */
+static void do_sys_chdir(exception_frame_t *frame)
+{
+    char kpath[VFS_PATH_MAX];
+    int rc;
+
+    if (copy_path_from_user(frame->rdi, kpath, (uint32_t)sizeof(kpath)) != 0)
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    rc = vfs_chdir(kpath);
+    if (rc == VFS_OK)
+    {
+        frame->rax = 0;
+        return;
+    }
+    if (rc == VFS_ERR_NOENT)
+        frame->rax = (uint64_t)-ENOENT;
+    else if (rc == VFS_ERR_NOTDIR)
+        frame->rax = (uint64_t)-ENOTDIR;
+    else if (rc == VFS_ERR_NOMEM)
+        frame->rax = (uint64_t)-ENOMEM;
+    else
+        frame->rax = (uint64_t)-EINVAL;
+}
+
+/* getcwd：拷出当前目录，要求 NUL（含）能装下 */
+static void do_sys_getcwd(exception_frame_t *frame)
+{
+    uint64_t ubuf = frame->rdi;
+    uint64_t size = frame->rsi;
+    char kbuf[VFS_PATH_MAX];
+    uint32_t i;
+    int rc;
+
+    if (size == 0 || size > VFS_PATH_MAX)
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    if (!user_mem_ok(ubuf, size))
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    rc = vfs_getcwd(kbuf, (uint32_t)sizeof(kbuf));
+    if (rc == VFS_OK)
+    {
+        for (i = 0; kbuf[i] != '\0'; i++)
+            ((char *)(uintptr_t)ubuf)[i] = kbuf[i];
+        if ((uint64_t)i + 1 > size)
+        {
+            frame->rax = (uint64_t)-ERANGE;
+            return;
+        }
+        ((char *)(uintptr_t)ubuf)[i] = '\0';
+        frame->rax = 0;
+        return;
+    }
+    if (rc == VFS_ERR_RANGE)
+        frame->rax = (uint64_t)-ERANGE;
+    else
+        frame->rax = (uint64_t)-EINVAL;
+}
+
+/* getdents：一口气列出 path 下目录项（小目录教学实现，无偏移续读） */
+static void do_sys_getdents(exception_frame_t *frame)
+{
+    char kpath[VFS_PATH_MAX];
+    uint64_t ubuf = frame->rsi;
+    uint64_t cap = frame->rdx;
+    csos_dirent_t *u = (csos_dirent_t *)(uintptr_t)ubuf;
+    vfs_dir_t *d = NULL;
+    uint64_t n = 0;
+    int rc;
+
+    if (cap == 0 || cap > 1024)
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    if (!user_mem_ok(ubuf, cap * sizeof(csos_dirent_t)))
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    if (copy_path_from_user(frame->rdi, kpath, (uint32_t)sizeof(kpath)) != 0)
+    {
+        frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    rc = vfs_opendir(kpath, &d);
+    if (rc != VFS_OK)
+    {
+        if (rc == VFS_ERR_NOENT)
+            frame->rax = (uint64_t)-ENOENT;
+        else if (rc == VFS_ERR_NOTDIR)
+            frame->rax = (uint64_t)-ENOTDIR;
+        else if (rc == VFS_ERR_NOMEM)
+            frame->rax = (uint64_t)-ENOMEM;
+        else
+            frame->rax = (uint64_t)-EINVAL;
+        return;
+    }
+    for (; n < cap; n++)
+    {
+        vfs_dirent_t e;
+        uint32_t i;
+
+        rc = vfs_readdir(d, &e);
+        if (rc != VFS_OK)
+            break; /* 末尾（NOENT）或驱动错误都收尾 */
+        for (i = 0; i < CSOS_NAME_MAX; i++)
+        {
+            u[n].name[i] = e.name[i];
+            if (e.name[i] == '\0')
+                break;
+        }
+        u[n].name[CSOS_NAME_MAX - 1] = '\0';
+        u[n].is_dir = e.is_dir;
+        u[n].size = e.size;
+    }
+    vfs_closedir(d);
+    frame->rax = n;
 }
 
 /* fbmap：映射显存到用户地址空间 */
@@ -543,7 +671,7 @@ typedef void (*sys_fn_t)(exception_frame_t *frame);
 /* execve 在表后定义，先声明 */
 static void do_sys_execve(exception_frame_t *frame);
 
-static const sys_fn_t g_sys_table[SYS_FBCTL + 1] = {
+static const sys_fn_t g_sys_table[SYS_GETDENTS + 1] = {
     [SYS_WRITE] = do_sys_write,
     [SYS_EXIT] = do_sys_exit,
     [SYS_SLEEP] = do_sys_sleep,
@@ -562,6 +690,9 @@ static const sys_fn_t g_sys_table[SYS_FBCTL + 1] = {
     [SYS_MKFIFO] = do_sys_mkfifo,
     [SYS_FBMAP] = do_sys_fbmap,
     [SYS_FBCTL] = do_sys_fbctl,
+    [SYS_CHDIR] = do_sys_chdir,
+    [SYS_GETCWD] = do_sys_getcwd,
+    [SYS_GETDENTS] = do_sys_getdents,
 };
 
 /* exec 参数包上限 4KB */
@@ -659,7 +790,7 @@ void handler_syscall(exception_frame_t *frame)
     uint64_t num = frame->rax;
     sys_fn_t fn;
 
-    if (num > SYS_FBCTL || g_sys_table[num] == NULL)
+    if (num > SYS_GETDENTS || g_sys_table[num] == NULL)
     {
         fput_string("[SYSCALL] unknown num=%llu\n",
                     (unsigned long long)num);

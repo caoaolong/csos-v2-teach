@@ -27,6 +27,9 @@
 #define SYS_MKFIFO 16  /* rdi=path -> 0/-errno */
 #define SYS_FBMAP 17   /* -> 显存用户态基址/-1（幂等） */
 #define SYS_FBCTL 18   /* rdi=op(0=交还console,1=compositor接管) -> 0/-EINVAL */
+#define SYS_CHDIR 19    /* rdi=path -> 0/-errno */
+#define SYS_GETCWD 20   /* rdi=buf, rsi=size -> 0/-errno */
+#define SYS_GETDENTS 21 /* rdi=path, rsi=buf(out, csos_dirent_t[n]), rdx=cap(个数) -> 条数/-errno */
 
 /* fbctl 操作码 */
 #define FB_RELEASE 0 /* 屏幕交还 console（按文字模型重画） */
@@ -60,5 +63,8 @@
 #define EEXIST 17 /* 已存在（mkfifo 撞名） */
 #define ECHILD 10 /* 无子进程可等 */
 #define EAGAIN 11 /* 非阻塞 IO 暂无数据（O_NONBLOCK 轮询用） */
+#define ENOTDIR 20 /* 不是目录（chdir/getdents 目标非法） */
+#define EISDIR 21 /* 是目录（cat 等按文件读目录时） */
+#define ERANGE 34 /* 结果超出缓冲（getcwd 缓冲太小） */
 
 #endif /* CSOS_ABI_H */

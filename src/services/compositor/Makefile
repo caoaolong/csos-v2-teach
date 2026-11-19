@@ -24,10 +24,10 @@ $(BUILD_DIR)/services/compositor/%.o: $(SRC_DIR)/services/compositor/%.c
 	$(CC) $(UFLAGS) -I$(COMP_DIR) -c -o $@ $<
 
 # compositor 程序：ELF 留符号供 gdb；暂不嵌入内核，等 spawn 就绪后由 init 拉起
-# （crt0/libc 由 compositor.ld 隐入；-T 置 .o 后：ld 单遍，归档需后搜）
-$(COMP_ELF): $(CRT0) $(COMP_OBJS) $(LIBC_A) $(COMP_DIR)/compositor.ld
+# （crt0/libc 由 user.ld 隐入；-T 置 .o 后：ld 单遍，归档需后搜）
+$(COMP_ELF): $(CRT0) $(COMP_OBJS) $(LIBC_A) $(USER_LD)
 	mkdir -p $(dir $@)
-	$(LD) -L$(BUILD_DIR)/lib -o $@ $(COMP_OBJS) -T $(COMP_DIR)/compositor.ld
+	$(LD) -L$(BUILD_DIR)/lib -o $@ $(COMP_OBJS) -T $(USER_LD)
 
 $(COMP_BIN): $(COMP_ELF)
 	$(OBJCOPY) -O binary $< $@
