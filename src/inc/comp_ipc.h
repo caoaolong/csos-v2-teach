@@ -135,6 +135,35 @@ static inline long comp_send(int fd, uint16_t type, const void *payload,
     return 0;
 }
 
+static inline int comp_try_send(int fd, uint16_t type, const void *payload,
+                                unsigned long len, uint8_t *scratch)
+{
+    unsigned long i;
+    unsigned long total;
+    long r;
+
+    if (len > COMP_MAX_PAYLOAD || scratch == NULL)
+        return -1;
+    scratch[0] = (uint8_t)COMP_IPC_MAGIC;
+    scratch[1] = (uint8_t)(COMP_IPC_MAGIC >> 8);
+    scratch[2] = (uint8_t)(COMP_IPC_MAGIC >> 16);
+    scratch[3] = (uint8_t)(COMP_IPC_MAGIC >> 24);
+    scratch[4] = (uint8_t)type;
+    scratch[5] = (uint8_t)(type >> 8);
+    scratch[6] = (uint8_t)len;
+    scratch[7] = (uint8_t)(len >> 8);
+    for (i = 0; i < len; i++)
+        scratch[8 + i] = ((const uint8_t *)payload)[i];
+    total = 8 + len;
+    errno = 0;
+    r = write(fd, scratch, total);
+    if (r == (long)total)
+        return 0;
+    if (r < 0 && errno == EAGAIN)
+        return 1;
+    return -1;
+}
+
 #define COMP_RBUFSZ 2048
 
 typedef struct comp_reader

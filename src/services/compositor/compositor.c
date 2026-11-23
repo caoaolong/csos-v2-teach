@@ -14,10 +14,10 @@
 #define COMP_TITLE_IDLE 0x00606060u
 #define COMP_TITLE_H 28 /* 未缩放标题栏高，实际乘 g_scale */
 #define COMP_BORDER 1
-#define MOUSE_SPEED 2 /* 指针加速：宿主走 1 像素，guest 走 2 像素，免得够不着边 */
-#define TASKBAR_H 28 /* 未缩放任务栏高，实际乘 g_scale */
-#define DESK_STRIPE 0x00161B21u /* 壁纸暗纹 */
-#define TASKBAR_BG 0x002A2A30u /* 任务栏底 */
+#define MOUSE_SPEED 2            /* 指针加速：宿主走 1 像素，guest 走 2 像素，免得够不着边 */
+#define TASKBAR_H 28             /* 未缩放任务栏高，实际乘 g_scale */
+#define DESK_STRIPE 0x00161B21u  /* 壁纸暗纹 */
+#define TASKBAR_BG 0x002A2A30u   /* 任务栏底 */
 #define TASKBTN_FACE 0x00383840u /* 任务栏按钮面 */
 
 /* v1 窗口机制：单客户端独占一个窗口 */
@@ -40,7 +40,7 @@ static int g_spawn_pending; /* 已 fork 等对端 CREATE；防连点起两个 */
 static int g_spawn_ttl;     /* pending 超时计数，CREATE 前消费完则清 pending */
 /* 握手完成：两端 fifo 均已打开并配对；断线后置 0，下个 CREATE 重配 evt 端 */
 static int g_hs_ok;
-static int g_drag_ox;       /* 抓取点相对窗左上角偏移 */
+static int g_drag_ox; /* 抓取点相对窗左上角偏移 */
 static int g_drag_oy;
 static uint32_t g_scale = 1; /* 字号整数倍率：DPI>140 用 2x，上限 2 */
 static uint32_t g_phys_w_mm; /* 显示器物理宽（EDID，0=未知） */
@@ -60,6 +60,8 @@ static input_event_t g_mevs[32];
 static input_event_t g_kevs[32];
 static uint8_t g_payload[COMP_MAX_PAYLOAD];
 static comp_hdr_t g_cmdh;
+static uint8_t g_sendb[COMP_MAX_PAYLOAD + sizeof(comp_hdr_t)];
+static unsigned long g_evt_drops;
 
 /* 光标下像素保存区：erase 时恢复原像素，不涂底色 */
 /* g_cursor_px/py 记录绘制位置：paint 同位重复调用直接返回，保证幂等 */
@@ -99,7 +101,7 @@ static void cursor_paint(uint32_t cx, uint32_t cy, int erase)
     if (g_cursor_visible)
     {
         if (cx == g_cursor_px && cy == g_cursor_py)
-            return; /* 已画在此处，保存区仍有效 */
+            return;                                /* 已画在此处，保存区仍有效 */
         cursor_paint(g_cursor_px, g_cursor_py, 1); /* 先清旧处再画新处 */
     }
     for (j = 0; j < CURSOR_HEIGHT; j++)
@@ -362,11 +364,36 @@ static void exec_text(const uint8_t *p, unsigned long len)
     cursor_paint(g_cx, g_cy, 0); /* 文本后重存：若已同位显示则无操作 */
 }
 
+static int evt_send(uint16_t type, const void *payload, unsigned long len)
+{
+    int retries;
+    int r;
+
+    if (type == COMP_MSG_EVTS || type == COMP_MSG_CURSOR)
+        retries = 0;
+    else
+        retries = 500;
+    for (;;)
+    {
+        r = comp_try_send(g_evtfd, type, payload, len, g_sendb);
+        if (r == 0)
+            return 0;
+        if (r < 0)
+            return -1; /* 无读端等硬错误 */
+        if (retries-- <= 0)
+        {
+            g_evt_drops++;
+            return (type == COMP_MSG_EVTS || type == COMP_MSG_CURSOR) ? 0 : -1;
+        }
+        sleep(2);
+    }
+}
+
 /* 转发一批输入事件给客户端 */
 static int forward_events(const input_event_t *evs, long nev)
 {
-    return (int)comp_send(g_evtfd, COMP_MSG_EVTS, evs,
-                          (unsigned long)(nev * (long)sizeof(input_event_t)));
+    return evt_send(COMP_MSG_EVTS, evs,
+                    (unsigned long)(nev * (long)sizeof(input_event_t)));
 }
 
 /* 标题栏高（像素，未缩放部分乘 g_scale 使用） */
@@ -463,12 +490,24 @@ static int send_cursor(void)
         return 0;
     c.x = g_cx;
     c.y = g_cy;
-    if (comp_send(g_evtfd, COMP_MSG_CURSOR, &c, sizeof(c)) != 0)
+    {
+        int r = comp_try_send(g_evtfd, COMP_MSG_CURSOR, &c, sizeof(c),
+                              g_sendb);
+
+        if (r == 0)
+        {
+            g_sent_cx = g_cx;
+            g_sent_cy = g_cy;
+            g_cursor_sent = 1;
+            return 0;
+        }
+        if (r > 0)
+        {
+            g_evt_drops++; /* 不记已发送，下个主循环同位重发 */
+            return 0;
+        }
         return -1;
-    g_sent_cx = g_cx;
-    g_sent_cy = g_cy;
-    g_cursor_sent = 1;
-    return 0;
+    }
 }
 
 /* 下发窗口几何 + 焦点 + 整窗 EXPOSE，末尾补发光标绝对位置 */
@@ -483,15 +522,15 @@ static int send_win_geom(void)
     w.w = g_win.w;
     w.h = g_win.h;
     w.scale = g_scale;
-    if (comp_send(g_evtfd, COMP_MSG_WIN_GEOM, &w, sizeof(w)) != 0)
+    if (evt_send(COMP_MSG_WIN_GEOM, &w, sizeof(w)) != 0)
         return -1;
-    if (comp_send(g_evtfd, COMP_MSG_FOCUS, &focused, sizeof(focused)) != 0)
+    if (evt_send(COMP_MSG_FOCUS, &focused, sizeof(focused)) != 0)
         return -1;
     dmg.x = 0;
     dmg.y = 0;
     dmg.w = 0;
     dmg.h = 0;
-    if (comp_send(g_evtfd, COMP_MSG_EXPOSE, &dmg, sizeof(dmg)) != 0)
+    if (evt_send(COMP_MSG_EXPOSE, &dmg, sizeof(dmg)) != 0)
         return -1;
     return send_cursor(); /* CREATE 后客户端立即拿到初始光标位置 */
 }
@@ -564,10 +603,11 @@ static int on_create(const uint8_t *p, unsigned long len)
     }
     if (!g_hs_ok)
     {
-        /* 重连的客户端：重开 evt 写端；对端正持读端等 WIN_GEOM，立即配对 */
+        /* 重连的客户端：重开 evt 写端（非阻塞，永不卡主循环）；
+           对端正持读端等 WIN_GEOM，立即配对 */
         if (g_evtfd >= 0)
             close(g_evtfd);
-        g_evtfd = (int)open(COMP_EVT_FIFO, O_WRONLY);
+        g_evtfd = (int)open(COMP_EVT_FIFO, O_WRONLY | O_NONBLOCK);
         if (g_evtfd < 0)
             return -1;
         g_hs_ok = 1;
@@ -634,13 +674,14 @@ static void client_reset(const char *why)
 {
     if (!g_hs_ok && !g_win_valid)
         return;
-    printf("compositor: client lost (%s)\n", why);
+    printf("compositor: client lost (%s, evt drops %lu)\n", why, g_evt_drops);
     g_win_valid = 0;
     g_dragging = 0;
     g_close_armed = 0;
     g_spawn_armed = 0;
     g_cursor_sent = 0;
     g_hs_ok = 0;
+    g_evt_drops = 0; /* 新纪元重新计数 */
     clear_screen();
     cursor_paint(g_cx, g_cy, 0);
 }
@@ -696,7 +737,7 @@ static void do_close(void)
     paint_desktop_rect(0, g_height - taskbar_h(), g_width, taskbar_h());
     cursor_paint(g_cx, g_cy, 0);
     if (g_evtfd >= 0)
-        comp_send(g_evtfd, COMP_MSG_CLOSE, NULL, 0); /* 尽力通知，失败走 EOF */
+        evt_send(COMP_MSG_CLOSE, NULL, 0); /* 尽力通知，失败走 EOF */
     client_reset("closed");
 }
 
@@ -721,14 +762,13 @@ static int ipc_handshake(void)
         printf("compositor: mkfifo evt failed\n");
         return -1;
     }
-    /* 先开 cmd 读端再开 evt 写端（与客户端对称等待） */
     g_cmdfd = (int)open(COMP_CMD_FIFO, O_RDONLY | O_NONBLOCK);
     if (g_cmdfd < 0)
     {
         printf("compositor: open cmd failed\n");
         return -1;
     }
-    g_evtfd = (int)open(COMP_EVT_FIFO, O_WRONLY);
+    g_evtfd = (int)open(COMP_EVT_FIFO, O_WRONLY | O_NONBLOCK);
     if (g_evtfd < 0)
     {
         printf("compositor: open evt failed\n");
@@ -741,8 +781,9 @@ static int ipc_handshake(void)
     g_close_armed = 0;
     g_spawn_armed = 0;
     g_cursor_sent = 0; /* 新客户端尚未同步过光标位置 */
-    g_hs_ok = 1;
-    printf("compositor: client connected, waiting CREATE\n");
+    g_evt_drops = 0;
+    g_hs_ok = 0; /* 等首个 CREATE 到达才算连接，对端未到前 EOF 静默 */
+    printf("compositor: waiting for client...\n");
     return 0;
 }
 
@@ -822,7 +863,7 @@ int main()
 
     printf("compositor: input ready %ux%u, waiting client\n",
            g_width, g_height);
-    if (ipc_handshake() != 0) /* 仅启动时阻塞等首个客户端 */
+    if (ipc_handshake() != 0) /* 打开即返（皆非阻塞），等首个 CREATE 才算连接 */
         exit(1);
     clear_screen();
     cursor_paint(g_cx, g_cy, 0);

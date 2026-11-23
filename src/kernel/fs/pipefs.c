@@ -108,7 +108,8 @@ static int pipefs_open(vfs_mount_t *m, const char *rel, int flags, vfs_file_t *f
     if (pf == NULL)
         return VFS_ERR_NOMEM;
 
-    pipe_wait_peer(n->sh, accmode == VFS_O_WRONLY);
+    if ((flags & VFS_O_NONBLOCK) == 0)
+        pipe_wait_peer(n->sh, accmode == VFS_O_WRONLY);
     f->mnt = pf->mnt;
     f->drv = pf->drv;
     f->flags = pf->flags;

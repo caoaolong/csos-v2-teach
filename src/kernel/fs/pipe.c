@@ -12,12 +12,12 @@ typedef struct pipe_shared
 {
     spinlock_t lock;
     uint8_t data[PIPE_BUF_SIZE];
-    uint32_t head; /* 读位置 */
-    uint32_t tail; /* 写位置 */
+    uint32_t head;  /* 读位置 */
+    uint32_t tail;  /* 写位置 */
     uint32_t count; /* 有效字节数 */
-    int readers;   /* 读端数 */
-    int writers;   /* 写端数 */
-    int refs;      /* 持有者数，归零释放 */
+    int readers;    /* 读端数 */
+    int writers;    /* 写端数 */
+    int refs;       /* 持有者数，归零释放 */
 } pipe_shared_t;
 
 typedef struct pipe_end
@@ -200,6 +200,12 @@ static int64_t pipe_write(vfs_file_t *f, const void *buf, uint64_t len)
         return VFS_ERR_INVAL; /* 无读端 */
     }
     if (sh->count == PIPE_BUF_SIZE)
+    {
+        spin_unlock_irqrestore(&sh->lock, flags);
+        return VFS_ERR_AGAIN; /* 阻塞调用方 yield 重试，非阻塞直接回 EAGAIN */
+    }
+    if ((f->flags & VFS_O_NONBLOCK) != 0 && len <= PIPE_BUF_SIZE &&
+        len > PIPE_BUF_SIZE - sh->count)
     {
         spin_unlock_irqrestore(&sh->lock, flags);
         return VFS_ERR_AGAIN;
