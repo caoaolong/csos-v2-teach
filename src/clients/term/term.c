@@ -580,7 +580,7 @@ static int send_create(uint32_t w, uint32_t h, const char *name)
     return (int)comp_send(g_cmdfd, COMP_MSG_CREATE, p, 8 + n + 1);
 }
 
-/* 与 compositor 握手：开两端，发 CREATE，等 WIN_GEOM */
+/* 与 compositor 握手：rendezvous 发 CREATE 取 ASSIGN，切私有对后等 WIN_GEOM */
 static int term_handshake(void)
 {
     comp_hdr_t h;
@@ -621,14 +621,74 @@ static int term_handshake(void)
         return -1;
     }
     comp_reader_init(&g_evtr);
-    /* 先发 CREATE，再阻塞等 WIN_GEOM 首帧 */
+    /* 先发 CREATE，rendezvous 上等 ASSIGN（u32 win_id），再切私有对 */
     if (send_create(0, 0, "term") != 0)
         return -1;
     if (comp_read_all(g_evtfd, &h, sizeof(h)) != 0)
         return -1;
-    if (h.magic != COMP_IPC_MAGIC || h.type != COMP_MSG_WIN_GEOM ||
-        h.len != sizeof(w))
+    if (h.magic != COMP_IPC_MAGIC || h.type != COMP_MSG_WIN_ASSIGN ||
+        h.len != sizeof(uint32_t))
         return -1;
+    {
+        uint32_t win_id;
+        char cpath[64];
+        char epath[64];
+
+        if (comp_read_all(g_evtfd, &win_id, sizeof(win_id)) != 0)
+            return -1;
+        if (win_id >= COMP_MAX_WIN)
+            return -1;
+        comp_pipe_path(cpath, sizeof(cpath), COMP_CMD_PAT, win_id);
+        comp_pipe_path(epath, sizeof(epath), COMP_EVT_PAT, win_id);
+        close(g_cmdfd);
+        close(g_evtfd);
+        g_cmdfd = -1;
+        g_evtfd = -1;
+        for (tries = 0; tries < 600; tries++)
+        {
+            g_cmdfd = (int)open(cpath, O_WRONLY);
+            if (g_cmdfd >= 0)
+                break;
+            sleep(50);
+        }
+        if (g_cmdfd < 0)
+        {
+            printf("term: open priv cmd timeout\n");
+            return -1;
+        }
+        for (tries = 0; tries < 600; tries++)
+        {
+            g_evtfd = (int)open(epath, O_RDONLY | O_NONBLOCK);
+            if (g_evtfd >= 0)
+                break;
+            sleep(50);
+        }
+        if (g_evtfd < 0)
+        {
+            printf("term: open priv evt timeout\n");
+            close(g_cmdfd);
+            g_cmdfd = -1;
+            return -1;
+        }
+        comp_reader_init(&g_evtr);
+        printf("term: assigned window %u\n", win_id);
+    }
+    /* 私有对上等首个 WIN_GEOM；中途混入的其它帧只管跳过（至多 16 帧） */
+    for (tries = 0; tries < 16; tries++)
+    {
+        if (comp_read_all(g_evtfd, &h, sizeof(h)) != 0)
+            return -1;
+        if (h.magic != COMP_IPC_MAGIC)
+            return -1;
+        if (h.type == COMP_MSG_WIN_GEOM && h.len == sizeof(w))
+            break;
+        if (h.len > sizeof(g_evt_payload))
+            return -1;
+        if (h.len > 0 && comp_read_all(g_evtfd, g_evt_payload, h.len) != 0)
+            return -1;
+        if (tries >= 15)
+            return -1;
+    }
     if (comp_read_all(g_evtfd, &w, sizeof(w)) != 0)
         return -1;
     g_wx = w.x;

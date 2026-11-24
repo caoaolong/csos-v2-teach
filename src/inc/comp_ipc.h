@@ -25,6 +25,49 @@
 #define COMP_MSG_EVTS 2     /* payload: input_event_t[n]（见 input.h，原样转发） */
 #define COMP_MSG_CURSOR 6   /* payload: comp_cursor_t（光标绝对屏坐标，已钳制） */
 #define COMP_MSG_CLOSE 7    /* S→C 关窗通知：空 payload；客户端回 DESTROY 后退出 */
+#define COMP_MSG_WIN_ASSIGN 8 /* rendezvous 应答：payload u32 win_id，后续走私有对 */
+
+/* 私有管道命名：slot 为窗口槽位（0..COMP_MAX_WIN-1），单窗阶段只用 slot 0 */
+#define COMP_MAX_WIN 8
+#define COMP_CMD_PAT "/pipe/comp-cmd."
+#define COMP_EVT_PAT "/pipe/comp-evt."
+
+/* 拼出私有管道路径（无 snprintf，用手写 utoa；dst 须 ≥64B） */
+static inline void comp_pipe_path(char *dst, unsigned long cap,
+                                  const char *base, unsigned id)
+{
+    unsigned long n = 0;
+    unsigned long div = 1000000000ul;
+    int started = 0;
+
+    while (*base != '\0' && n + 1 < cap)
+    {
+        dst[n++] = *base++;
+    }
+    if (id == 0)
+    {
+        if (n + 1 < cap)
+            dst[n++] = '0';
+    }
+    else
+    {
+        while (div > 0)
+        {
+            unsigned d = (unsigned)(id / div);
+
+            if (d != 0 || started)
+            {
+                if (n + 1 >= cap)
+                    break;
+                dst[n++] = (char)('0' + d);
+                started = 1;
+                id -= d * (unsigned)div;
+            }
+            div /= 10;
+        }
+    }
+    dst[n < cap ? n : cap - 1] = '\0';
+}
 
 #define COMP_MAX_PAYLOAD 2048
 

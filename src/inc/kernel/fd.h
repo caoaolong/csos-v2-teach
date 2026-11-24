@@ -3,7 +3,8 @@
 
 #include <kernel/fs/vfs.h>
 
-#define FD_MAX 16
+/* 窗口服务常驻十几个 fifo 私有对；16 不够，提到 32（task_t 走 kmalloc） */
+#define FD_MAX 32
 
 struct task;
 
